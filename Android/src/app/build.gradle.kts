@@ -124,7 +124,21 @@ dependencies {
   implementation(libs.mcp.kotlin.sdk)
   implementation(libs.ktor.client.android)
   implementation(libs.ktor.client.core)
+  implementation(libs.ktor.server.core)
+  implementation(libs.ktor.server.cio)
+  implementation(libs.ktor.server.content.negotiation)
+  implementation(libs.ktor.serialization.kotlinx.json)
 }
+
+val generateBundledModelAllowlist by tasks.registering(org.gradle.api.tasks.Sync::class) {
+  // Keep a schema-compatible catalog in the APK for instant/offline first launch.
+  from(rootProject.file("../../model_allowlists/1_0_15.json"))
+  rename { "model_allowlist.json" }
+  into(layout.buildDirectory.dir("generated/modelAllowlistAssets"))
+}
+
+android.sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/modelAllowlistAssets"))
+tasks.named("preBuild").configure { dependsOn(generateBundledModelAllowlist) }
 
 protobuf {
   protoc { artifact = "com.google.protobuf:protoc:4.26.1" }

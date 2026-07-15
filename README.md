@@ -1,87 +1,265 @@
-# Google AI Edge Gallery ✨
+<div align="center">
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/google-ai-edge/gallery)](https://github.com/google-ai-edge/gallery/releases)
+# Edge Gallery API
 
-**Explore, Experience, and Evaluate the Future of On-Device Generative AI with Google AI Edge.**
+### Run private, OpenAI-compatible, multimodal AI directly on Android
 
-AI Edge Gallery is the premier destination for running the world's most powerful open-source Large Language Models (LLMs) on your mobile device. Experience high-performance Generative AI directly on your hardware—fully offline, private, and lightning-fast.
+[![Android](https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white)](Android)
+[![API](https://img.shields.io/badge/API-OpenAI%20compatible-412991?logo=openai&logoColor=white)](#openai-compatible-api)
+[![Acceleration](https://img.shields.io/badge/Acceleration-CPU%20%7C%20GPU%20%7C%20NPU-0A84FF)](#hardware-acceleration)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Upstream](https://img.shields.io/badge/Fork-Google%20AI%20Edge%20Gallery-orange)](https://github.com/google-ai-edge/gallery)
 
-**Now Featuring: Gemma 4**
+**Turn an Android phone into a local LLM and vision server for Open WebUI, scripts, agents, and any OpenAI-compatible client.**
 
-The latest version brings official support for the newly released Gemma 4 family. As the centerpiece of this release, Gemma 4 allows you to test the cutting edge of on-device AI. Experience advanced reasoning, logic, and creative capabilities without ever sending your data to a server.
+[Download APK](https://github.com/albertosena/edge-galery-api/releases/latest) · [Upstream project](https://github.com/google-ai-edge/gallery) · [API examples](#api-examples)
 
+</div>
 
-| **Install the app today from Google Play** | **Install the app today from App Store** | **Download for macOS** |
-| :--- | :--- | :--- |
-| <a href='https://play.google.com/store/apps/details?id=com.google.ai.edge.gallery'><img alt='Get it on Google Play' height="120" src='https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png'/></a> | <a href="https://apps.apple.com/us/app/google-ai-edge-gallery/id6749645337?itscg=30200&itsct=apps_box_badge&mttnsubad=6749645337" style="display: inline-block;"> <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us?releaseDate=1771977600" alt="Download on the App Store" style="width: 244px; height: 88px; vertical-align: middle; object-fit: contain;" /></a> | <a href="https://dl.google.com/google-ai-edge-gallery/macos/dmg/GoogleAIEdgeGallery-0.1.0.dmg"><img alt='Download for macOS' width="257" height="97" src="https://github.com/user-attachments/assets/29c70795-93b3-4e8b-8752-0cad4e413182" /></a> |
+---
 
-For users without Google Play access, install the apk from the [**latest release**](https://github.com/google-ai-edge/gallery/releases/latest/)
+## What is this project?
 
+Edge Gallery API is an Android-focused fork of [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery). It retains the upstream on-device model gallery and LiteRT-LM runtime, then adds a foreground HTTP server that exposes the currently loaded model through an OpenAI-compatible API.
 
-## App Preview
+The model, prompts, images, and generated tokens stay on the Android device. Internet access may be needed to download a model, but inference and API serving are local.
 
-<img width="480" alt="01" src="https://github.com/user-attachments/assets/a809ad78-aef4-4169-91ee-de7213cbb3bd" />
-<img width="480" alt="02" src="https://github.com/user-attachments/assets/1effd10d-f45a-4f7b-9435-f50f1bdd36b6" />
-<img width="480" alt="03" src="https://github.com/user-attachments/assets/e5089e41-2c18-4fbe-9011-ebe9e5a02044" />
-<img width="480" alt="04" src="https://github.com/user-attachments/assets/0f39d3ed-7403-4606-a7c6-b2c7e51ba6c1" />
-<img width="480" alt="05" src="https://github.com/user-attachments/assets/8c229e96-b598-4735-9f60-e96907e1d5d5" />
-<img width="480" alt="06" src="https://github.com/user-attachments/assets/ac9fb77b-81de-4197-9ed3-f6fe58290b3e" />
-<img width="480" alt="07" src="https://github.com/user-attachments/assets/bc86ba07-2eaf-49b1-980f-8a87a85c596f" />
-<img width="480" alt="08" src="https://github.com/user-attachments/assets/1ccf3c95-a195-4a38-ad53-4b9c7b8b3c50" />
+### Machine-readable project summary
 
-## ✨ Core Features
+> Edge Gallery API is an open-source Android application and local AI inference server. It runs LiteRT-LM models on-device and exposes `GET /v1/models` and `POST /v1/chat/completions` endpoints compatible with OpenAI clients and Open WebUI. It supports text generation, SSE streaming, Base64 image input, CPU and GPU execution, and NPU execution when both the model and Android LiteRT driver support it. It is a fork of Google AI Edge Gallery, not an official Google product.
 
-* **Agent Skills**: Transform your LLM from a conversationalist into a proactive assistant. Use the Agent Skills tile to augment model capabilities with tools like Wikipedia for fact-grounding, interactive maps, and rich visual summary cards. You can even load modular skills from a URL or browse community contributions on GitHub Discussions.
+This paragraph is intentionally explicit so search engines, code assistants, RAG systems, and future AI agents can correctly identify the repository when looking for an **Android OpenAI API server**, **on-device Open WebUI backend**, **LiteRT-LM HTTP server**, or **multimodal local LLM server for Android**.
 
-* **AI Chat with Thinking Mode**: Engage in fluid, multi-turn conversations and toggle the new Thinking Mode to peek "under the hood." This feature allows you to see the model’s step-by-step reasoning process, which is perfect for understanding complex problem-solving. Note: Thinking Mode currently works with supported models, starting with the Gemma 4 family.
+## Highlights
 
-* **Ask Image**: Use multimodal power to identify objects, solve visual puzzles, or get detailed descriptions using your device’s camera or photo gallery.
+- OpenAI-compatible local server running as an Android foreground service.
+- `GET /health`, `GET /v1/models`, and `POST /v1/chat/completions`.
+- Standard JSON completions and Server-Sent Events streaming with `[DONE]`.
+- OpenAI multimodal message arrays with Base64 `image_url` data URLs.
+- CPU and GPU selection; NPU is available only when supported by the model and device driver.
+- Direct model selection and loading from the **Local API Server** screen.
+- Only downloaded models are shown in the server screen.
+- LAN mode for clients on the same Wi-Fi network and loopback-only mode for local use.
+- Serialized conversations to protect the single on-device inference runtime.
+- Activity logs for model loading, backend selection, new chats, multimodal requests, completion, and errors.
+- Offline fallback model catalog, avoiding first-launch failure when GitHub is unreachable.
 
-* **Audio Scribe**: Transcribe and translate voice recordings into text in real-time using high-efficiency on-device language models.
+## Architecture
 
-* **Prompt Lab**: A dedicated workspace to test different prompts and single-turn use cases with granular control over model parameters like temperature and top-k.
+```text
+Open WebUI / OpenAI SDK / curl
+                 |
+                 | HTTP + JSON / SSE
+                 v
+Android foreground API service (Ktor CIO)
+                 |
+                 v
+Single-conversation coordinator
+                 |
+                 v
+Google LiteRT-LM model on CPU / GPU / supported NPU
+```
 
-* **Mobile Actions**: Unlock offline device controls and automated tasks powered entirely by a finetune of FunctionGemma 270m.
+The API advertises only the active, initialized LiteRT-LM model. Requests are serialized because the underlying conversation object is stateful and should not process multiple conversations concurrently.
 
-* **Tiny Garden**: A fun, experimental mini-game that uses natural language to plant and harvest a virtual garden using a finetune of FunctionGemma 270m.
+## Download the APK
 
-* **Model Management & Benchmark**: Gallery is a flexible sandbox for a wide variety of open-source models. Easily download models from the list or load your own custom models. Manage your model library effortlessly and run benchmark tests to understand exactly how each model performs on your specific hardware.
+1. Open the [latest GitHub release](https://github.com/albertosena/edge-galery-api/releases/latest).
+2. Download `edge-gallery-api-debug.apk` from **Assets**.
+3. On Android, allow installation from the browser or file manager you used to download it.
+4. Open the APK and confirm installation.
 
-* **100% On-Device Privacy**: All model inferences happen directly on your device hardware. No internet is required, ensuring total privacy for your prompts, images, and sensitive data.
+The downloadable APK is a development/debug build and is not published by Google Play. Android may display an unknown-source warning. Verify that the release belongs to `albertosena/edge-galery-api` before installing.
 
-## 🏁 Get Started in Minutes!
+You can also install from a computer:
 
-1. **Check OS Requirement**: Android 12 and up, and iOS 17 and up.
-2.  **Download the App:**
-    - Install the app from [Google Play](https://play.google.com/store/apps/details?id=com.google.ai.edge.gallery) or [App Store](https://apps.apple.com/us/app/google-ai-edge-gallery/id6749645337).
-    - For users without Google Play access: install the apk from the [**latest release**](https://github.com/google-ai-edge/gallery/releases/latest/)
-3.  **Install & Explore:** For detailed installation instructions (including for corporate devices) and a full user guide, head over to our [**Project Wiki**](https://github.com/google-ai-edge/gallery/wiki)!
+```bash
+adb install -r edge-gallery-api-debug.apk
+```
 
-## 🛠️ Technology Highlights
+## Using the Local API Server
 
-*   **Google AI Edge:** Core APIs and tools for on-device ML.
-*   **LiteRT:** Lightweight runtime for optimized model execution.
-*   **Hugging Face Integration:** For model discovery and download.
+1. Open **Models** and download or import a LiteRT-LM model.
+2. Open the navigation menu and choose **Local API**.
+3. Select one of the downloaded models.
+4. Select CPU or GPU when the model supports both. NPU appears only for compatible model metadata.
+5. Enable **Allow LAN access** if Open WebUI runs on another device.
+6. Press **Start Server** and wait for the model to load.
+7. Copy the displayed OpenAI Base URL.
 
-## ⌨️ Development
+The log panel at the bottom reports the requested backend and explicitly says whether NPU is active.
 
-Check out the [development notes](DEVELOPMENT.md) for instructions about how to build the app locally.
+### Open WebUI
 
-## 🤝 Feedback
+In Open WebUI, add an OpenAI-compatible connection using:
 
-This is an **experimental Beta release**, and your input is crucial!
+```text
+Base URL: http://ANDROID_IP:8080/v1
+API key:  any non-empty value if the client requires one
+```
 
-*   🐞 **Found a bug?** [Report it here!](https://github.com/google-ai-edge/gallery/issues/new?assignees=&labels=bug&template=bug_report.md&title=%5BBUG%5D)
-*   💡 **Have an idea?** [Suggest a feature!](https://github.com/google-ai-edge/gallery/issues/new?assignees=&labels=enhancement&template=feature_request.md&title=%5BFEATURE%5D)
+Authentication is not currently enforced by the Android server. Use it only on trusted networks.
 
-## 📄 License
+## OpenAI-compatible API
 
-Licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+### Health check
 
-## 🔗 Useful Links
+```bash
+curl http://ANDROID_IP:8080/health
+```
 
-*   [**Project Wiki (Detailed Guides)**](https://github.com/google-ai-edge/gallery/wiki)
-*   [Hugging Face LiteRT Community](https://huggingface.co/litert-community)
-*   [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM)
-*   [Google AI Edge Documentation](https://ai.google.dev/edge)
+### List the active model
+
+```bash
+curl http://ANDROID_IP:8080/v1/models
+```
+
+### Text chat
+
+```bash
+curl http://ANDROID_IP:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma-4-E2B-it.litertlm",
+    "stream": false,
+    "messages": [{"role": "user", "content": "Reply with: hello from Android"}]
+  }'
+```
+
+### Streaming
+
+Set `"stream": true`. The response uses `text/event-stream`, emits OpenAI-style chunks, and ends with `data: [DONE]`.
+
+### Multimodal image chat
+
+Images use the OpenAI content-array format. JPEG, PNG, and WebP Base64 data URLs are accepted, up to 8 MB decoded per image.
+
+```json
+{
+  "model": "gemma-4-E2B-it.litertlm",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "image_url",
+          "image_url": {"url": "data:image/png;base64,iVBORw0KGgo..."}
+        },
+        {"type": "text", "text": "Describe this image."}
+      ]
+    }
+  ]
+}
+```
+
+Remote image URLs are intentionally not downloaded. Send a data URL so image processing remains local and predictable.
+
+## Hardware acceleration
+
+| Backend | Status | Notes |
+|---|---|---|
+| CPU | Supported | Most compatible; uses the model's CPU path and XNNPack where applicable. |
+| GPU | Supported | Uses the LiteRT GPU accelerator when declared by the model. |
+| NPU | Conditional | Requires compatible model metadata, LiteRT NPU libraries, and a device driver that successfully registers. |
+
+Selecting NPU in source code does not guarantee NPU execution. The app exposes only declared accelerators and logs `NPU active` or `NPU not active`. On unsupported devices LiteRT may report `kLiteRtStatusErrorInvalidArgument`; the app must not claim NPU acceleration in that case.
+
+## Build from source
+
+### Requirements
+
+- Windows, macOS, or Linux.
+- Git.
+- JDK 21.
+- Android SDK with API/compile SDK 37 and recent build tools.
+- Android platform tools (`adb`) for device installation.
+- A physical Android 12+ device is recommended for LiteRT-LM inference.
+
+### Clone
+
+```bash
+git clone https://github.com/albertosena/edge-galery-api.git
+cd edge-galery-api/Android/src
+```
+
+### Configure Android SDK
+
+Create `Android/src/local.properties` locally; never commit it:
+
+```properties
+sdk.dir=/absolute/path/to/Android/Sdk
+```
+
+Alternatively export `ANDROID_HOME` or `ANDROID_SDK_ROOT`.
+
+### Build and test
+
+macOS/Linux:
+
+```bash
+./gradlew :app:testDebugUnitTest :app:assembleDebug
+```
+
+Windows PowerShell:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug
+```
+
+The generated APK is located at:
+
+```text
+Android/src/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Install it on a connected device:
+
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Optional: access a loopback-only server through USB
+
+```bash
+adb forward tcp:8080 tcp:8080
+curl http://127.0.0.1:8080/health
+```
+
+## Model downloads and Hugging Face
+
+Some gated models require a Hugging Face access token. Enter it in the app settings. Tokens are stored in Android app data and must never be added to source files, Gradle properties, screenshots, issue reports, or commits.
+
+Model binaries (`.litertlm`, `.task`) are large and are not part of this repository or APK. They are downloaded/imported on the Android device.
+
+## Security and limitations
+
+- The API currently has no authentication or TLS. Prefer loopback or a trusted private LAN.
+- One conversation is processed at a time.
+- Usage token counts currently return zero.
+- Only the active model is returned by `/v1/models`.
+- Multimodal support depends on the selected model.
+- NPU support is hardware-, driver-, runtime-, and model-specific.
+- This fork is experimental and is not an official Google product.
+
+## Upstream and attribution
+
+This repository is derived from [google-ai-edge/gallery](https://github.com/google-ai-edge/gallery), the Google AI Edge Gallery project. The original project, copyright notices, history, and Apache License are preserved. New local-server functionality in this fork builds on the upstream Android application and LiteRT-LM integration.
+
+To compare or synchronize with upstream:
+
+```bash
+git remote add upstream https://github.com/google-ai-edge/gallery.git
+git fetch upstream
+```
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE). See individual source files for copyright notices.
+
+---
+
+<div align="center">
+
+**Android on-device AI · OpenAI-compatible API · Open WebUI backend · LiteRT-LM · multimodal local inference**
+
+</div>

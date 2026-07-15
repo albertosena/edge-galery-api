@@ -58,6 +58,9 @@ import com.google.ai.edge.gallery.proto.AccessTokenData
 import com.google.ai.edge.gallery.proto.ImportedModel
 import com.google.ai.edge.gallery.proto.Theme
 import com.google.ai.edge.gallery.runtime.aicore.AICoreModelHelper
+import com.google.ai.edge.gallery.runtime.runtimeHelper
+import com.google.ai.edge.gallery.server.ActiveModelRegistry
+import com.google.ai.edge.gallery.server.LocalApiController
 import com.google.ai.edge.litertlm.Contents
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -198,6 +201,8 @@ constructor(
   private val lifecycleProvider: AppLifecycleProvider,
   private val customTasks: Set<@JvmSuppressWildcards CustomTask>,
   private val systemPromptRepository: SystemPromptRepository,
+  private val activeModelRegistry: ActiveModelRegistry,
+  val localApiController: LocalApiController,
   @ApplicationContext private val context: Context,
 ) : ViewModel() {
   private val externalFilesDir = context.getExternalFilesDir(null)
@@ -283,6 +288,7 @@ constructor(
   }
 
   fun selectModel(model: Model) {
+    activeModelRegistry.select(model)
     if (_uiState.value.selectedModel.name != model.name) {
       _uiState.update { it.copy(selectedModel = model) }
     }
@@ -414,6 +420,7 @@ constructor(
     task: Task,
     model: Model,
     force: Boolean = false,
+    localApiMultimodal: Boolean = false,
     onDone: () -> Unit = {},
     onError: (String) -> Unit = {},
   ) {
@@ -449,6 +456,7 @@ constructor(
       val onDoneFn: (error: String) -> Unit = { error ->
         model.initializing = false
         if (model.instance != null) {
+          activeModelRegistry.select(model)
           Log.d(TAG, "Model '${model.name}' initialized successfully")
           updateModelInitializationStatus(
             model = model,
@@ -473,14 +481,27 @@ constructor(
       // Call the model initialization function.
       val systemPrompt = SystemPromptHelper.getEffectiveSystemPrompt(systemPromptRepository, task)
       withContext(Dispatchers.IO) {
-        getCustomTaskByTaskId(id = task.id)
-          ?.initializeModelFn(
+        if (localApiMultimodal && model.runtimeType == RuntimeType.LITERT_LM) {
+          model.runtimeHelper.initialize(
             context = context,
-            coroutineScope = viewModelScope,
             model = model,
+            taskId = task.id,
+            supportImage = model.llmSupportImage,
+            supportAudio = model.llmSupportAudio,
             systemInstruction = Contents.of(systemPrompt),
             onDone = onDoneFn,
+            coroutineScope = viewModelScope,
           )
+        } else {
+          getCustomTaskByTaskId(id = task.id)
+            ?.initializeModelFn(
+              context = context,
+              coroutineScope = viewModelScope,
+              model = model,
+              systemInstruction = Contents.of(systemPrompt),
+              onDone = onDoneFn,
+            )
+        }
       }
     }
   }
@@ -492,6 +513,11 @@ constructor(
     instanceToCleanUp: Any? = model.instance,
     onDone: () -> Unit = {},
   ) {
+    if (localApiController.state.value.running && activeModelRegistry.activeLiteRtModel() === model) {
+      Log.d(TAG, "Keeping model '${model.name}' loaded for Local API Server")
+      onDone()
+      return
+    }
     if (instanceToCleanUp != null && instanceToCleanUp !== model.instance) {
       Log.d(TAG, "Stale cleanup request for ${model.name}. Aborting.")
       onDone()
@@ -502,6 +528,7 @@ constructor(
       model.cleanUpAfterInit = false
       Log.d(TAG, "Cleaning up model '${model.name}'...")
       val onDoneFn: () -> Unit = {
+        activeModelRegistry.clearIfSame(model)
         model.instance = null
         model.initializing = false
         updateModelInitializationStatus(
@@ -950,8 +977,13 @@ constructor(
         }
 
         if (modelAllowlist == null) {
-          // Load from github.
-          var version = BuildConfig.VERSION_NAME.replace(".", "_")
+          // Prefer local data so first render never waits for GitHub and offline startup is reliable.
+          modelAllowlist = readModelAllowlistFromDisk() ?: readBundledModelAllowlist()
+        }
+
+        if (modelAllowlist == null) {
+          // Last resort for development builds that do not package an allowlist.
+          val version = BuildConfig.VERSION_NAME.replace(".", "_")
           val url = getAllowlistUrl(version)
           Log.d(TAG, "Loading model allowlist from internet. Url: $url")
           val data = getJsonResponse<ModelAllowlist>(url = url)
@@ -959,7 +991,7 @@ constructor(
 
           if (modelAllowlist == null) {
             Log.w(TAG, "Failed to load model allowlist from internet. Trying to load it from disk")
-            modelAllowlist = readModelAllowlistFromDisk()
+            modelAllowlist = readModelAllowlistFromDisk() ?: readBundledModelAllowlist()
           } else {
             Log.d(TAG, "Done: loading model allowlist from internet")
             saveModelAllowlistToDisk(modelAllowlistContent = data?.textContent ?: "{}")
@@ -1120,6 +1152,17 @@ constructor(
     return null
   }
 
+  private fun readBundledModelAllowlist(): ModelAllowlist? {
+    return try {
+      context.assets.open(MODEL_ALLOWLIST_FILENAME).bufferedReader().use { reader ->
+        Gson().fromJson(reader, ModelAllowlist::class.java)
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "failed to read bundled model allowlist", e)
+      null
+    }
+  }
+
   private fun isModelPartiallyDownloaded(model: Model): Boolean {
     if (model.localModelFilePathOverride.isNotEmpty()) {
       return false
@@ -1214,20 +1257,29 @@ constructor(
   }
 
   private fun createModelFromImportedModelInfo(info: ImportedModel): Model {
+    // Imports created by older Gallery versions may not contain capability metadata. Reconcile
+    // them with the bundled/remote catalog by file name so the Local API can expose vision and
+    // every backend that is actually supported by that model.
+    val catalogModel =
+      _allowlistModels.firstOrNull {
+        it.downloadFileName.equals(info.fileName, ignoreCase = true) ||
+          it.name.equals(info.fileName.substringBeforeLast('.'), ignoreCase = true)
+      }
     val accelerators: MutableList<Accelerator> =
-      info.llmConfig.compatibleAcceleratorsList
-        .mapNotNull { acceleratorLabel ->
+      (info.llmConfig.compatibleAcceleratorsList.mapNotNull { acceleratorLabel ->
           when (acceleratorLabel.trim()) {
             Accelerator.GPU.label -> Accelerator.GPU
             Accelerator.CPU.label -> Accelerator.CPU
             Accelerator.NPU.label -> Accelerator.NPU
-            else -> null // Ignore unknown accelerator labels
+            else -> null
           }
-        }
+        } + catalogModel.orEmptyAccelerators())
+        .distinct()
+        .ifEmpty { listOf(Accelerator.CPU) }
         .toMutableList()
-    val llmMaxToken = info.llmConfig.defaultMaxTokens
-    val llmSupportImage = info.llmConfig.supportImage
-    val llmSupportAudio = info.llmConfig.supportAudio
+    val llmMaxToken = info.llmConfig.defaultMaxTokens.takeIf { it > 0 } ?: catalogModel?.llmMaxToken ?: 1024
+    val llmSupportImage = info.llmConfig.supportImage || catalogModel?.llmSupportImage == true
+    val llmSupportAudio = info.llmConfig.supportAudio || catalogModel?.llmSupportAudio == true
     val llmSupportTinyGarden = info.llmConfig.supportTinyGarden
     val llmSupportMobileActions = info.llmConfig.supportMobileActions
     val llmSupportThinking = info.llmConfig.supportThinking
@@ -1282,6 +1334,7 @@ constructor(
         capabilityToTaskTypes = capabilityToTaskTypes.toMap(),
         llmMaxToken = llmMaxToken,
         accelerators = accelerators,
+        visionAccelerator = catalogModel?.visionAccelerator ?: Accelerator.GPU,
         // We assume all imported models are LLM for now.
         isLlm = true,
         runtimeType = RuntimeType.LITERT_LM,
@@ -1290,6 +1343,8 @@ constructor(
 
     return model
   }
+
+  private fun Model?.orEmptyAccelerators(): List<Accelerator> = this?.accelerators ?: emptyList()
 
   private fun groupTasksByCategory(): Map<String, List<Task>> {
     val tasks = getActiveCustomTasks().map { it.task }

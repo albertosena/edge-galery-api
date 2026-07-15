@@ -88,6 +88,7 @@ import com.google.ai.edge.gallery.ui.modelmanager.ModelInitializationStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManager
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import com.google.ai.edge.gallery.ui.notifications.NotificationsScreen
+import com.google.ai.edge.gallery.server.LocalApiServerScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -99,6 +100,7 @@ private const val ROUTE_MODEL = "route_model"
 private const val ROUTE_BENCHMARK = "benchmark"
 private const val ROUTE_MODEL_MANAGER = "model_manager"
 private const val ROUTE_NOTIFICATIONS = "notifications"
+private const val ROUTE_LOCAL_API = "local_api"
 private const val ENTER_ANIMATION_DURATION_MS = 500
 private val ENTER_ANIMATION_EASING = EaseOutExpo
 private const val ENTER_ANIMATION_DELAY_MS = 100
@@ -213,6 +215,7 @@ fun GalleryNavHost(
             },
             onModelsClicked = { navController.navigate(ROUTE_MODEL_MANAGER) },
             onNotificationsClicked = { navController.navigate(ROUTE_NOTIFICATIONS) },
+            onLocalApiClicked = { navController.navigate(ROUTE_LOCAL_API) },
             gm4 = true,
           )
         }
@@ -436,6 +439,17 @@ fun GalleryNavHost(
       exitTransition = { slideDownExit() },
     ) {
       NotificationsScreen(navigateUp = { navController.navigateUp() })
+    }
+
+    composable(
+      route = ROUTE_LOCAL_API,
+      enterTransition = { slideUpEnter() },
+      exitTransition = { slideDownExit() },
+    ) {
+      LocalApiServerScreen(
+        modelManagerViewModel = modelManagerViewModel,
+        navigateUp = { navController.navigateUp() },
+      )
     }
 
     // Benchmark creation page.

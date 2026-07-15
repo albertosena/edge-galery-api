@@ -33,6 +33,7 @@ import com.google.ai.edge.gallery.data.THOUGHT_CHANNEL
 import com.google.ai.edge.gallery.runtime.CleanUpListener
 import com.google.ai.edge.gallery.runtime.LlmModelHelper
 import com.google.ai.edge.gallery.runtime.ResultListener
+import com.google.ai.edge.gallery.runtime.SingleConversationCoordinator
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
@@ -49,6 +50,10 @@ import com.google.ai.edge.litertlm.ToolProvider
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 private const val TAG = "AGLlmChatModelHelper"
 
@@ -312,29 +317,39 @@ object LlmChatModelHelper : LlmModelHelper {
       contents.add(Content.Text(input))
     }
 
-    conversation.sendMessageAsync(
-      Contents.of(contents),
-      object : MessageCallback {
-        override fun onMessage(message: Message) {
-          resultListener(message.toString(), false, message.channels[THOUGHT_CHANNEL])
-        }
+    val scope = coroutineScope ?: CoroutineScope(Dispatchers.Default)
+    scope.launch {
+      SingleConversationCoordinator.withConversation {
+        suspendCancellableCoroutine { continuation ->
+          continuation.invokeOnCancellation { conversation.cancelProcess() }
+          conversation.sendMessageAsync(
+            Contents.of(contents),
+            object : MessageCallback {
+              override fun onMessage(message: Message) {
+                resultListener(message.toString(), false, message.channels[THOUGHT_CHANNEL])
+              }
 
-        override fun onDone() {
-          resultListener("", true, null)
-        }
+              override fun onDone() {
+                resultListener("", true, null)
+                if (continuation.isActive) continuation.resume(Unit)
+              }
 
-        override fun onError(throwable: Throwable) {
-          if (throwable is CancellationException) {
-            Log.i(TAG, "The inference is cancelled.")
-            resultListener("", true, null)
-          } else {
-            Log.e(TAG, "onError", throwable)
-            onError("Error: ${throwable.message}")
-          }
+              override fun onError(throwable: Throwable) {
+                if (throwable is CancellationException) {
+                  Log.i(TAG, "The inference is cancelled.")
+                  resultListener("", true, null)
+                } else {
+                  Log.e(TAG, "onError", throwable)
+                  onError("Error: ${throwable.message}")
+                }
+                if (continuation.isActive) continuation.resume(Unit)
+              }
+            },
+            extraContext ?: emptyMap(),
+          )
         }
-      },
-      extraContext ?: emptyMap(),
-    )
+      }
+    }
   }
 
   private fun Bitmap.toPngByteArray(): ByteArray {

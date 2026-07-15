@@ -1,1 +1,20 @@
 .DS_Store
+
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+local.properties
+google-services.json
+*.jks
+*.keystore
+*.p12
+*.pem
+
+# Build outputs and downloaded model binaries
+*.apk
+*.aab
+*.litertlm
+*.task
+**/build/
+**/.gradle/
