@@ -18,6 +18,23 @@
 
 ---
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><strong>Home and Local API entry point</strong></td>
+    <td align="center"><strong>Downloaded models and server setup</strong></td>
+    <td align="center"><strong>Performance, thermal data, and logs</strong></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" alt="AI Edge Gallery API home screen" width="280"></a></td>
+    <td><a href="docs/screenshots/local-api.png"><img src="docs/screenshots/local-api.png" alt="Local API Server model and network configuration" width="280"></a></td>
+    <td><a href="docs/screenshots/performance-logs.png"><img src="docs/screenshots/performance-logs.png" alt="Device performance metrics and server logs" width="280"></a></td>
+  </tr>
+</table>
+
+Click a screenshot to open the full-resolution image.
+
 ## What is this project?
 
 AI Edge Gallery API is an Android-focused fork of [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery). It retains the upstream on-device model gallery and LiteRT-LM runtime, then adds a foreground HTTP server that exposes the currently loaded model through an OpenAI-compatible API. The Android app is branded **AI Edge Gallery API**; the repository URL remains `edge-galery-api` for compatibility with existing links.
