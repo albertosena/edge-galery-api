@@ -14,10 +14,18 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+data class InferenceMetrics(
+  val tokensPerSecond: Double = 0.0,
+  val timeToFirstTokenMs: Long = 0,
+  val generatedTokens: Int = 0,
+)
+
 @Singleton
 class LocalApiLogStore @Inject constructor() {
   private val _entries = MutableStateFlow<List<String>>(emptyList())
   val entries = _entries.asStateFlow()
+  private val _metrics = MutableStateFlow(InferenceMetrics())
+  val metrics = _metrics.asStateFlow()
 
   fun add(message: String) {
     val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
@@ -26,5 +34,15 @@ class LocalApiLogStore @Inject constructor() {
 
   fun clear() {
     _entries.value = emptyList()
+  }
+
+  fun recordInference(startedAtMs: Long, firstTokenAtMs: Long, generatedTokens: Int) {
+    val elapsedSeconds = ((System.currentTimeMillis() - startedAtMs).coerceAtLeast(1)) / 1000.0
+    _metrics.value =
+      InferenceMetrics(
+        tokensPerSecond = generatedTokens / elapsedSeconds,
+        timeToFirstTokenMs = (firstTokenAtMs - startedAtMs).coerceAtLeast(0),
+        generatedTokens = generatedTokens,
+      )
   }
 }

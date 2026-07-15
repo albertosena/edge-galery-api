@@ -96,7 +96,6 @@ import androidx.compose.ui.graphics.Brush.Companion.linearGradient
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -125,7 +124,6 @@ import com.google.ai.edge.gallery.data.Task
 import com.google.ai.edge.gallery.ui.common.RevealingText
 import com.google.ai.edge.gallery.ui.common.SwipingText
 import com.google.ai.edge.gallery.ui.common.TaskIcon
-import com.google.ai.edge.gallery.ui.common.buildTrackableUrlAnnotatedString
 import com.google.ai.edge.gallery.ui.common.rememberDelayedAnimationProgress
 import com.google.ai.edge.gallery.ui.common.tos.AppTosDialog
 import com.google.ai.edge.gallery.ui.common.tos.TosViewModel
@@ -171,6 +169,7 @@ fun HomeScreen(
   gm4: Boolean = false,
 ) {
   val uiState by modelManagerViewModel.uiState.collectAsState()
+  val localApiState by modelManagerViewModel.localApiController.state.collectAsState()
   var showSettingsDialog by remember { mutableStateOf(false) }
   var showTosDialog by remember { mutableStateOf(!tosViewModel.getIsTosAccepted()) }
   val scope = rememberCoroutineScope()
@@ -467,11 +466,17 @@ fun HomeScreen(
                   } else {
                     AppTitle(enableAnimation = enableAnimation)
                   }
-                  IntroText(enableAnimation = enableAnimation, gm4 = gm4)
-                  if (gm4) {
-                    TryGm4IntroText(enableAnimation = enableAnimation)
-                  }
+                  IntroText(enableAnimation = enableAnimation)
                 }
+
+                LocalApiHomeCard(
+                  running = localApiState.running,
+                  baseUrl = localApiState.baseUrl,
+                  modelName =
+                    uiState.selectedModel.takeUnless { it.name == "empty" }?.name,
+                  onClick = onLocalApiClicked,
+                  modifier = Modifier.padding(horizontal = if (gm4) 24.dp else 40.dp, vertical = 8.dp),
+                )
 
                 // Tab header for categories.
                 //
@@ -527,9 +532,9 @@ fun HomeScreen(
         }
       }
     }
-  }
+}
 
-  // Show TOS dialog for users to accept.
+// Show TOS dialog for users to accept.
   if (showTosDialog) {
     AppTosDialog(
       onTosAccepted = {
@@ -572,6 +577,63 @@ fun HomeScreen(
         }
       },
     )
+  }
+}
+
+@Composable
+private fun LocalApiHomeCard(
+  running: Boolean,
+  baseUrl: String,
+  modelName: String?,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Card(
+    onClick = onClick,
+    modifier = modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(24.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(20.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      Box(
+        modifier = Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondary),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          imageVector = Icons.Rounded.Cloud,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSecondary,
+          modifier = Modifier.size(28.dp),
+        )
+      }
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text("Local API Server", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+          Text(
+            if (running) "RUNNING" else "STOPPED",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSecondaryContainer,
+          )
+        }
+        Text(
+          if (running) baseUrl else "Expose downloaded on-device models through an OpenAI-compatible API.",
+          style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+          modelName?.let { "Model: $it" } ?: "Tap to select and load a model",
+          style = MaterialTheme.typography.labelMedium,
+          color = MaterialTheme.colorScheme.primary,
+        )
+      }
+    }
   }
 }
 
@@ -653,8 +715,8 @@ private fun AppTitle(enableAnimation: Boolean) {
 
 @Composable
 fun AppTitleGm4(enableAnimation: Boolean) {
-  val text1 = "Google"
-  val text2 = "AI Edge Gallery"
+  val text1 = "AI Edge"
+  val text2 = "Gallery API"
   val annotatedText = buildAnnotatedString {
     withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.onSurface)) { append(text1) }
     append(" ")
@@ -677,9 +739,7 @@ fun AppTitleGm4(enableAnimation: Boolean) {
 }
 
 @Composable
-private fun IntroText(enableAnimation: Boolean, gm4: Boolean) {
-  val litertUrl = "https://huggingface.co/litert-community"
-
+private fun IntroText(enableAnimation: Boolean) {
   // Intro text animation:
   //
   // fade in + slide up.
@@ -694,87 +754,9 @@ private fun IntroText(enableAnimation: Boolean, gm4: Boolean) {
       )
     }
 
-  val introText = buildAnnotatedString {
-    val gemma4Url = "https://ai.google.dev/gemma"
-    if (gm4) {
-      append("${stringResource(R.string.gemma4_intro_part_1)} ")
-      append(
-        buildTrackableUrlAnnotatedString(
-          url = litertUrl,
-          linkText = stringResource(R.string.litert_community_label),
-        )
-      )
-      append("${stringResource(R.string.gemma4_intro_part_2)} ")
-      append(
-        buildTrackableUrlAnnotatedString(
-          url = gemma4Url,
-          linkText = stringResource(R.string.gemma4_label),
-        )
-      )
-      append(".")
-    } else {
-      append("${stringResource(R.string.app_intro)} ")
-      append(
-        buildTrackableUrlAnnotatedString(
-          url = litertUrl,
-          linkText = stringResource(R.string.litert_community_label),
-        )
-      )
-    }
-  }
   Text(
-    introText,
-    style = MaterialTheme.typography.bodyMedium,
-    modifier =
-      Modifier.graphicsLayer {
-        alpha = progress
-        translationY = (CONTENT_COMPOSABLES_OFFSET_Y.dp * (1 - progress)).toPx()
-      },
-  )
-}
-
-@Composable
-private fun TryGm4IntroText(enableAnimation: Boolean) {
-  // fade in + slide up.
-  val progress =
-    if (!enableAnimation) {
-      1f
-    } else {
-      rememberDelayedAnimationProgress(
-        initialDelay = TITLE_SECOND_LINE_ANIMATION_START,
-        animationDurationMs = CONTENT_COMPOSABLES_ANIMATION_DURATION,
-        animationLabel = "intro text animation",
-      )
-    }
-  Row(
-    modifier =
-      Modifier.padding(top = 24.dp).graphicsLayer {
-        alpha = progress
-        translationY = (CONTENT_COMPOSABLES_OFFSET_Y.dp * (1 - progress)).toPx()
-      },
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
-  ) {
-    Icon(
-      ImageVector.vectorResource(R.drawable.gemma_logo),
-      contentDescription = null,
-      modifier = Modifier.size(24.dp),
-      tint = MaterialTheme.colorScheme.primary,
-    )
-    Text(
-      text = "Try Gemma 4 today",
-      style =
-        MaterialTheme.typography.headlineSmall.copy(
-          fontWeight = FontWeight.Medium,
-          fontSize = 20.sp,
-          lineHeight = 24.sp,
-        ),
-      color = MaterialTheme.colorScheme.onSurface,
-    )
-  }
-
-  Text(
-    "Gemma 4 E2B & E4B are here! Try them in AI Chat, Agent Skills, or the use cases below.",
+    "Run private AI on this device and expose downloaded models through an " +
+      "OpenAI-compatible local API for Open WebUI, multimodal apps, and AI agents.",
     style = MaterialTheme.typography.bodyMedium,
     modifier =
       Modifier.graphicsLayer {

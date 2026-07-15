@@ -28,6 +28,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import java.util.UUID
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 
 @Serializable
 data class HealthResponse(
@@ -105,34 +108,71 @@ internal fun Application.localApiModule(
       val requestId = UUID.randomUUID().toString().take(8)
       try {
         val request = call.receive<OpenAiChatRequest>()
+        val inferenceStartedAt = System.currentTimeMillis()
         val multimodal = request.messages.any { it.content.toString().contains("\"image_url\"") }
         logs.add("New chat $requestId • ${request.model} • ${if (multimodal) "multimodal" else "text"}")
-        val response = inferenceGateway.complete(request)
-        logs.add("Chat $requestId completed")
         if (!request.stream) {
+          var generatedTokens = 0
+          var firstTokenAt = 0L
+          val response = inferenceGateway.complete(request) {
+            generatedTokens += 1
+            if (firstTokenAt == 0L) firstTokenAt = System.currentTimeMillis()
+          }
+          logs.recordInference(inferenceStartedAt, firstTokenAt, generatedTokens)
+          logs.add("Chat $requestId completed")
           call.respond(HttpStatusCode.OK, response)
         } else {
+          logs.add("Chat $requestId streaming${if (request.exposeThinking) " + thinking" else ""}")
           call.respondTextWriter(contentType = ContentType.Text.EventStream) {
-            val choice = response.choices.single()
-            val contentChunk =
-              OpenAiChatChunk(
-                id = response.id,
-                created = response.created,
-                model = response.model,
-                choices = listOf(OpenAiChunkChoice(delta = OpenAiDelta(role = "assistant", content = choice.message.content))),
-              )
-            val finalChunk =
-              OpenAiChatChunk(
-                id = response.id,
-                created = response.created,
-                model = response.model,
+            coroutineScope {
+              val streamId = "chatcmpl-${UUID.randomUUID()}"
+              val created = System.currentTimeMillis() / 1000
+              val deltas = Channel<InferenceDelta>(Channel.UNLIMITED)
+              var firstDeltaAt = 0L
+              var generatedTokens = 0
+              val inference = async {
+                try {
+                  inferenceGateway.complete(request) { deltas.trySend(it) }
+                } finally {
+                  deltas.close()
+                }
+              }
+              for (delta in deltas) {
+                generatedTokens += 1
+                if (firstDeltaAt == 0L) {
+                  firstDeltaAt = System.currentTimeMillis()
+                  logs.add("Chat $requestId first chunk")
+                }
+                val chunk = OpenAiChatChunk(
+                  id = streamId,
+                  created = created,
+                  model = request.model,
+                  choices = listOf(
+                    OpenAiChunkChoice(
+                      delta = OpenAiDelta(
+                        role = "assistant",
+                        content = delta.content,
+                        reasoningContent = delta.reasoningContent.takeIf { request.exposeThinking },
+                      )
+                    )
+                  ),
+                )
+                write("data: ${json.encodeToString(chunk)}\n\n")
+                flush()
+              }
+              inference.await()
+              logs.recordInference(inferenceStartedAt, firstDeltaAt, generatedTokens)
+              val finalChunk = OpenAiChatChunk(
+                id = streamId,
+                created = created,
+                model = request.model,
                 choices = listOf(OpenAiChunkChoice(delta = OpenAiDelta(), finishReason = "stop")),
               )
-            write("data: ${json.encodeToString(contentChunk)}\n\n")
-            flush()
-            write("data: ${json.encodeToString(finalChunk)}\n\n")
-            write("data: [DONE]\n\n")
-            flush()
+              write("data: ${json.encodeToString(finalChunk)}\n\n")
+              write("data: [DONE]\n\n")
+              flush()
+              logs.add("Chat $requestId completed")
+            }
           }
         }
       } catch (e: OpenAiRequestException) {

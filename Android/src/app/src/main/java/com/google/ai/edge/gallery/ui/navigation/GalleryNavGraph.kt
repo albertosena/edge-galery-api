@@ -449,6 +449,7 @@ fun GalleryNavHost(
       LocalApiServerScreen(
         modelManagerViewModel = modelManagerViewModel,
         navigateUp = { navController.navigateUp() },
+        navigateToModels = { navController.navigate(ROUTE_MODEL_MANAGER) },
       )
     }
 

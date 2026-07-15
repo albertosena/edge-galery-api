@@ -11,6 +11,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import com.google.ai.edge.gallery.runtime.SingleConversationCoordinator
 import com.google.ai.edge.gallery.runtime.runtimeHelper
+import com.google.ai.edge.gallery.data.THOUGHT_CHANNEL
 import com.google.ai.edge.gallery.ui.llmchat.LlmModelInstance
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Content
@@ -41,6 +42,7 @@ data class OpenAiChatRequest(
   val temperature: Double? = null,
   @SerialName("top_p") val topP: Double? = null,
   @SerialName("max_tokens") val maxTokens: Int? = null,
+  @SerialName("expose_thinking") val exposeThinking: Boolean = true,
 )
 
 @Serializable data class OpenAiAssistantMessage(val role: String = "assistant", val content: String)
@@ -56,7 +58,11 @@ data class OpenAiChatResponse(
   val usage: OpenAiUsage = OpenAiUsage(),
 )
 
-@Serializable data class OpenAiDelta(val role: String? = null, val content: String? = null)
+@Serializable data class OpenAiDelta(
+  val role: String? = null,
+  val content: String? = null,
+  @SerialName("reasoning_content") val reasoningContent: String? = null,
+)
 @Serializable data class OpenAiChunkChoice(val index: Int = 0, val delta: OpenAiDelta, @SerialName("finish_reason") val finishReason: String? = null)
 @Serializable data class OpenAiChatChunk(val id: String, @SerialName("object") val objectType: String = "chat.completion.chunk", val created: Long, val model: String, val choices: List<OpenAiChunkChoice>)
 
@@ -65,7 +71,10 @@ data class OpenAiChatResponse(
 
 @Singleton
 class OpenAiInferenceGateway @Inject constructor(private val registry: ActiveModelRegistry) {
-  suspend fun complete(request: OpenAiChatRequest): OpenAiChatResponse {
+  suspend fun complete(
+    request: OpenAiChatRequest,
+    onDelta: ((InferenceDelta) -> Unit)? = null,
+  ): OpenAiChatResponse {
     val model = registry.activeLiteRtModel() ?: throw OpenAiRequestException("No model is loaded.", "model_not_loaded")
     if (request.model != model.name) throw OpenAiRequestException("The requested model is not active.", "model_not_found")
     val system =
@@ -108,10 +117,21 @@ class OpenAiInferenceGateway @Inject constructor(private val registry: ActiveMod
         instance.conversation.sendMessageAsync(
           Contents.of(contents),
           object : MessageCallback {
-            override fun onMessage(message: Message) { text.append(message.toString()) }
+            override fun onMessage(message: Message) {
+              val content = message.toString()
+              val reasoning = message.channels[THOUGHT_CHANNEL]
+              text.append(content)
+              onDelta?.invoke(
+                InferenceDelta(
+                  content = content.takeIf(String::isNotEmpty),
+                  reasoningContent = reasoning?.takeIf(String::isNotEmpty),
+                )
+              )
+            }
             override fun onDone() { if (continuation.isActive) continuation.resume(text.toString()) }
             override fun onError(throwable: Throwable) { if (continuation.isActive) continuation.resumeWithException(throwable) }
           },
+          if (request.exposeThinking) mapOf("enable_thinking" to "true") else emptyMap(),
         )
       }
     }
@@ -123,6 +143,8 @@ class OpenAiInferenceGateway @Inject constructor(private val registry: ActiveMod
     )
   }
 }
+
+data class InferenceDelta(val content: String? = null, val reasoningContent: String? = null)
 
 class OpenAiRequestException(message: String, val code: String) : IllegalArgumentException(message)
 

@@ -420,7 +420,8 @@ constructor(
     task: Task,
     model: Model,
     force: Boolean = false,
-    localApiMultimodal: Boolean = false,
+    localApiMode: Boolean = false,
+    enableMultimodal: Boolean = true,
     onDone: () -> Unit = {},
     onError: (String) -> Unit = {},
   ) {
@@ -481,13 +482,13 @@ constructor(
       // Call the model initialization function.
       val systemPrompt = SystemPromptHelper.getEffectiveSystemPrompt(systemPromptRepository, task)
       withContext(Dispatchers.IO) {
-        if (localApiMultimodal && model.runtimeType == RuntimeType.LITERT_LM) {
+        if (localApiMode && model.runtimeType == RuntimeType.LITERT_LM) {
           model.runtimeHelper.initialize(
             context = context,
             model = model,
             taskId = task.id,
-            supportImage = model.llmSupportImage,
-            supportAudio = model.llmSupportAudio,
+            supportImage = enableMultimodal && model.llmSupportImage,
+            supportAudio = enableMultimodal && model.llmSupportAudio,
             systemInstruction = Contents.of(systemPrompt),
             onDone = onDoneFn,
             coroutineScope = viewModelScope,

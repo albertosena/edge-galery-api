@@ -9,6 +9,10 @@ package com.google.ai.edge.gallery.server
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +29,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +40,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,19 +56,37 @@ import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LocalApiServerScreen(modelManagerViewModel: ModelManagerViewModel, navigateUp: () -> Unit) {
+fun LocalApiServerScreen(
+  modelManagerViewModel: ModelManagerViewModel,
+  navigateUp: () -> Unit,
+  navigateToModels: () -> Unit,
+) {
   val controller = modelManagerViewModel.localApiController
   val state by controller.state.collectAsState()
   val modelState by modelManagerViewModel.uiState.collectAsState()
   val logEntries by controller.logs.entries.collectAsState()
+  val inferenceMetrics by controller.logs.metrics.collectAsState()
   var allowLan by remember { mutableStateOf(state.host == "0.0.0.0") }
   var portText by remember { mutableStateOf(state.port.toString()) }
   var starting by remember { mutableStateOf(false) }
   val context = LocalContext.current
   val model = modelState.selectedModel.takeUnless { it.name == "empty" }
+  var memorySaver by remember(model?.name) {
+    mutableStateOf(model?.name?.contains("E4B", ignoreCase = true) == true)
+  }
+  var performance by remember { mutableStateOf(readDevicePerformance(context)) }
+  LaunchedEffect(Unit) {
+    while (true) {
+      performance = withContext(Dispatchers.Default) { readDevicePerformance(context) }
+      delay(3_000)
+    }
+  }
   val models =
     modelManagerViewModel.getAllModels().filter {
       it.isLlm &&
@@ -127,8 +151,33 @@ fun LocalApiServerScreen(modelManagerViewModel: ModelManagerViewModel, navigateU
             enabled = !state.running,
             onClick = {
               if (downloaded) {
-                modelManagerViewModel.selectModel(candidate)
-                controller.log("Selected model: ${candidate.name}")
+                val select = {
+                  modelManagerViewModel.selectModel(candidate)
+                  controller.log("Selected model: ${candidate.name}")
+                }
+                val task = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
+                val loadedModels =
+                  modelManagerViewModel.getAllModels().filter {
+                    it !== candidate && it.instance != null
+                  }.distinctBy { System.identityHashCode(it.instance) }
+                if (loadedModels.isNotEmpty() && task != null) {
+                  controller.log("Unloading ${loadedModels.size} previous model instance(s)")
+                  var remaining = loadedModels.size
+                  loadedModels.forEach { loaded ->
+                    modelManagerViewModel.cleanupModel(
+                      context = context,
+                      task = task,
+                      model = loaded,
+                      onDone = {
+                        controller.log("Unloaded: ${loaded.name}")
+                        remaining -= 1
+                        if (remaining == 0) select()
+                      },
+                    )
+                  }
+                } else {
+                  select()
+                }
               } else {
                 modelManagerViewModel.downloadModel(
                   task = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT),
@@ -141,8 +190,12 @@ fun LocalApiServerScreen(modelManagerViewModel: ModelManagerViewModel, navigateU
           }
         }
       }
+      OutlinedButton(onClick = navigateToModels, modifier = Modifier.fillMaxWidth()) {
+        Text("Browse all models")
+      }
 
       if (model != null && model.accelerators.isNotEmpty()) {
+        Text("Runtime", style = MaterialTheme.typography.titleMedium)
         Text("Accelerator", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           model.accelerators.forEach { accelerator ->
@@ -178,6 +231,26 @@ fun LocalApiServerScreen(modelManagerViewModel: ModelManagerViewModel, navigateU
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
         Column(modifier = Modifier.weight(1f)) {
+          Text("Memory saver")
+          Text("1024 output tokens; image/audio encoders off. Recommended for E4B.", style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(
+          checked = memorySaver,
+          enabled = !state.running && !starting,
+          onCheckedChange = {
+            memorySaver = it
+            controller.log("Memory saver ${if (it) "enabled" else "disabled"}")
+          },
+        )
+      }
+
+      Text("Network", style = MaterialTheme.typography.titleMedium)
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
           Text("Allow LAN access")
           Text(
             if (allowLan) "Listen on all network interfaces" else "Only this Android device",
@@ -201,6 +274,7 @@ fun LocalApiServerScreen(modelManagerViewModel: ModelManagerViewModel, navigateU
       )
 
       if (state.running) {
+        Text("API connection", style = MaterialTheme.typography.titleMedium)
         Text("OpenAI Base URL")
         Text(state.baseUrl, style = MaterialTheme.typography.bodyLarge)
         OutlinedButton(
@@ -227,11 +301,18 @@ fun LocalApiServerScreen(modelManagerViewModel: ModelManagerViewModel, navigateU
             val task = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
             if (task != null) {
               starting = true
+              if (memorySaver) {
+                model.configValues = model.configValues.toMutableMap().apply {
+                  put(ConfigKeys.MAX_TOKENS.label, 1024)
+                }
+                controller.log("Memory saver applied: 1024 tokens, multimodal off")
+              }
               modelManagerViewModel.initializeModel(
                 context = context,
                 task = task,
                 model = model,
-                localApiMultimodal = true,
+                localApiMode = true,
+                enableMultimodal = !memorySaver,
                 onDone = {
                   starting = false
                   val loadedBackend =
@@ -239,7 +320,7 @@ fun LocalApiServerScreen(modelManagerViewModel: ModelManagerViewModel, navigateU
                   controller.log(
                     "Model loaded • backend ${loadedBackend.uppercase()} • " +
                       (if (loadedBackend == Accelerator.NPU.label) "NPU active" else "NPU not active") +
-                      if (model.llmSupportImage) " • multimodal enabled" else ""
+                      if (model.llmSupportImage && !memorySaver) " • multimodal enabled" else " • multimodal off"
                   )
                   controller.start(portText.toIntOrNull() ?: 8080, allowLan)
                 },
@@ -264,9 +345,52 @@ fun LocalApiServerScreen(modelManagerViewModel: ModelManagerViewModel, navigateU
         )
       }
 
-      Text("Open WebUI", style = MaterialTheme.typography.titleMedium)
-      Text("Use the displayed URL as the OpenAI Base URL. Authentication is not enabled yet.")
-      Text("Available: GET /health, GET /v1/models and POST /v1/chat/completions")
+      ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Text("Device performance", style = MaterialTheme.typography.titleMedium)
+          Text(
+            if (inferenceMetrics.generatedTokens > 0)
+              "%.1f tokens/s | First token: %d ms".format(
+                inferenceMetrics.tokensPerSecond,
+                inferenceMetrics.timeToFirstTokenMs,
+              )
+            else "Tokens/s: waiting for the first chat",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          if (inferenceMetrics.generatedTokens > 0) {
+            Text("Generated fragments: ${inferenceMetrics.generatedTokens} (approximate tokens)", style = MaterialTheme.typography.bodySmall)
+          }
+          HorizontalDivider()
+          Text("App memory: ${performance.appPssMb} MB | Graphics: ${performance.appGraphicsMb} MB")
+          Text("Available RAM: ${performance.availableRamMb} / ${performance.totalRamMb} MB")
+          Text(
+            "Battery: %.1f C | Thermal: %s%s".format(
+              performance.batteryCelsius,
+              performance.thermalLabel,
+              if (performance.lowMemory) " | LOW MEMORY" else "",
+            ),
+            color = if (performance.thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE || performance.lowMemory)
+              MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+          )
+          OutlinedButton(
+            onClick = {
+              val powerManager = context.getSystemService(PowerManager::class.java)
+              if (!powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+                runCatching {
+                  context.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}")))
+                }.onFailure {
+                  context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+                }
+              } else controller.log("Battery optimization is already unrestricted")
+            },
+            modifier = Modifier.fillMaxWidth(),
+          ) { Text("Allow unrestricted battery use") }
+        }
+      }
 
       HorizontalDivider()
       Row(

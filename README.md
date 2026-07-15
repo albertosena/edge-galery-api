@@ -1,6 +1,6 @@
 <div align="center">
 
-# Edge Gallery API
+# AI Edge Gallery API
 
 ### Run private, OpenAI-compatible, multimodal AI directly on Android
 
@@ -20,13 +20,13 @@
 
 ## What is this project?
 
-Edge Gallery API is an Android-focused fork of [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery). It retains the upstream on-device model gallery and LiteRT-LM runtime, then adds a foreground HTTP server that exposes the currently loaded model through an OpenAI-compatible API.
+AI Edge Gallery API is an Android-focused fork of [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery). It retains the upstream on-device model gallery and LiteRT-LM runtime, then adds a foreground HTTP server that exposes the currently loaded model through an OpenAI-compatible API. The Android app is branded **AI Edge Gallery API**; the repository URL remains `edge-galery-api` for compatibility with existing links.
 
 The model, prompts, images, and generated tokens stay on the Android device. Internet access may be needed to download a model, but inference and API serving are local.
 
 ### Machine-readable project summary
 
-> Edge Gallery API is an open-source Android application and local AI inference server. It runs LiteRT-LM models on-device and exposes `GET /v1/models` and `POST /v1/chat/completions` endpoints compatible with OpenAI clients and Open WebUI. It supports text generation, SSE streaming, Base64 image input, CPU and GPU execution, and NPU execution when both the model and Android LiteRT driver support it. It is a fork of Google AI Edge Gallery, not an official Google product.
+> AI Edge Gallery API is an open-source Android application and local AI inference server. It runs LiteRT-LM models on-device and exposes `GET /v1/models` and `POST /v1/chat/completions` endpoints compatible with OpenAI clients and Open WebUI. It supports text generation, real-time SSE streaming, exposed model reasoning, Base64 image input, CPU and GPU execution, and NPU execution when both the model and Android LiteRT driver support it. It is a fork of Google AI Edge Gallery, not an official Google product.
 
 This paragraph is intentionally explicit so search engines, code assistants, RAG systems, and future AI agents can correctly identify the repository when looking for an **Android OpenAI API server**, **on-device Open WebUI backend**, **LiteRT-LM HTTP server**, or **multimodal local LLM server for Android**.
 
@@ -35,13 +35,19 @@ This paragraph is intentionally explicit so search engines, code assistants, RAG
 - OpenAI-compatible local server running as an Android foreground service.
 - `GET /health`, `GET /v1/models`, and `POST /v1/chat/completions`.
 - Standard JSON completions and Server-Sent Events streaming with `[DONE]`.
+- Incremental token streaming, optional exposed thinking through `reasoning_content`, tokens/second, and time-to-first-token metrics.
 - OpenAI multimodal message arrays with Base64 `image_url` data URLs.
 - CPU and GPU selection; NPU is available only when supported by the model and device driver.
 - Direct model selection and loading from the **Local API Server** screen.
 - Only downloaded models are shown in the server screen.
+- An always-visible **Browse all models** button links back to the complete model catalog.
 - LAN mode for clients on the same Wi-Fi network and loopback-only mode for local use.
 - Serialized conversations to protect the single on-device inference runtime.
 - Activity logs for model loading, backend selection, new chats, multimodal requests, completion, and errors.
+- Live diagnostics for app/graphics memory, available RAM, battery temperature, thermal status, and low-memory pressure.
+- A shortcut to request unrestricted battery usage for long-running server sessions.
+- Memory Saver limits output to 1,024 tokens and disables image/audio encoders; it defaults on for E4B models.
+- A dedicated Local API home card and the **AI Edge Gallery API** app identity.
 - Offline fallback model catalog, avoiding first-launch failure when GitHub is unreachable.
 
 ## Architecture
@@ -65,7 +71,7 @@ The API advertises only the active, initialized LiteRT-LM model. Requests are se
 ## Download the APK
 
 1. Open the [latest GitHub release](https://github.com/albertosena/edge-galery-api/releases/latest).
-2. Download `edge-gallery-api-debug.apk` from **Assets**.
+2. Download `ai-edge-gallery-api-debug.apk` from **Assets**.
 3. On Android, allow installation from the browser or file manager you used to download it.
 4. Open the APK and confirm installation.
 
@@ -74,20 +80,22 @@ The downloadable APK is a development/debug build and is not published by Google
 You can also install from a computer:
 
 ```bash
-adb install -r edge-gallery-api-debug.apk
+adb install -r ai-edge-gallery-api-debug.apk
 ```
 
 ## Using the Local API Server
 
 1. Open **Models** and download or import a LiteRT-LM model.
 2. Open the navigation menu and choose **Local API**.
-3. Select one of the downloaded models.
+3. Select one of the downloaded models, or use **Browse all models** to open the complete catalog.
 4. Select CPU or GPU when the model supports both. NPU appears only for compatible model metadata.
 5. Enable **Allow LAN access** if Open WebUI runs on another device.
-6. Press **Start Server** and wait for the model to load.
-7. Copy the displayed OpenAI Base URL.
+6. Optionally enable **Memory saver** for large models or memory-constrained devices.
+7. Press **Start Server** and wait for the model to load.
+8. Optionally press **Allow unrestricted battery use** to reduce background interruption by Android.
+9. Copy the displayed OpenAI Base URL.
 
-The log panel at the bottom reports the requested backend and explicitly says whether NPU is active.
+Device performance appears immediately above the log panel. It reports memory, graphics allocation, available RAM, temperature, thermal pressure, tokens per second, and time to first token. Logs report the requested backend and explicitly say whether NPU is active.
 
 ### Open WebUI
 
@@ -129,6 +137,19 @@ curl http://ANDROID_IP:8080/v1/chat/completions \
 ### Streaming
 
 Set `"stream": true`. The response uses `text/event-stream`, emits OpenAI-style chunks, and ends with `data: [DONE]`.
+
+### Exposed thinking
+
+The request property `"expose_thinking": true` is enabled by default. When the selected model and runtime provide a thought channel, streaming chunks expose it as `reasoning_content`. Set it to `false` to disable the thinking option and omit reasoning from the response.
+
+```json
+{
+  "model": "gemma-4-E2B-it.litertlm",
+  "stream": true,
+  "expose_thinking": true,
+  "messages": [{"role": "user", "content": "Explain your answer step by step."}]
+}
+```
 
 ### Multimodal image chat
 
@@ -235,9 +256,10 @@ Model binaries (`.litertlm`, `.task`) are large and are not part of this reposit
 
 - The API currently has no authentication or TLS. Prefer loopback or a trusted private LAN.
 - One conversation is processed at a time.
-- Usage token counts currently return zero.
+- Performance token counts are approximate generated callback fragments; JSON usage fields currently remain zero.
 - Only the active model is returned by `/v1/models`.
 - Multimodal support depends on the selected model.
+- Thinking output depends on the selected model and runtime exposing a thought channel.
 - NPU support is hardware-, driver-, runtime-, and model-specific.
 - This fork is experimental and is not an official Google product.
 
