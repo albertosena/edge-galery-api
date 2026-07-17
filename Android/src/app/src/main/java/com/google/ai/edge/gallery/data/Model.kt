@@ -439,3 +439,12 @@ val Model.supportModelBenchmark: Boolean
   get() =
     runtimeType == RuntimeType.LITERT_LM ||
       false
+
+/** Qualcomm-compiled LiteRT-LM artifacts contain an NPU graph, not CPU/GPU input tensors. */
+val Model.requiresNpuBackend: Boolean
+  get() {
+    val identifier = "$name $downloadFileName $localModelFilePathOverride".lowercase()
+    return identifier.contains(".qualcomm.sm8650.") ||
+      identifier.contains("_qualcomm_sm8650_") ||
+      identifier.contains(".qnn.")
+  }

@@ -46,9 +46,17 @@ enum class ValueType {
 data class ConfigKey(val id: String, val label: String, @StringRes val labelRes: Int)
 
 object ConfigKeys {
+  val CONTEXT_LENGTH =
+    ConfigKey("context_length", "Context length", R.string.config_label_context_length)
   val MAX_TOKENS = ConfigKey("max_tokens", "Max tokens", R.string.config_label_max_tokens)
   val MAX_OUTPUT_TOKENS =
-    ConfigKey("max_output_tokens", "Max output tokens", R.string.config_label_max_output_tokens)
+    ConfigKey("max_output_tokens", "Maximum response tokens", R.string.config_label_max_output_tokens)
+  val AUTO_SUMMARIZE =
+    ConfigKey("auto_summarize", "Automatically summarize long conversations", R.string.config_label_auto_summarize)
+  val SUMMARIZATION_THRESHOLD =
+    ConfigKey("summarization_threshold", "Summarization threshold", R.string.config_label_summarization_threshold)
+  val RECENT_MESSAGES_TO_PRESERVE =
+    ConfigKey("recent_messages_to_preserve", "Recent messages to preserve", R.string.config_label_recent_messages)
   val TOPK = ConfigKey("topk", "TopK", R.string.config_label_topk)
   val TOPP = ConfigKey("topp", "TopP", R.string.config_label_topp)
   val TEMPERATURE = ConfigKey("temperature", "Temperature", R.string.config_label_temperature)
@@ -283,21 +291,45 @@ fun createLlmChatConfigs(
   supportThinking: Boolean = false,
   supportSpeculativeDecoding: Boolean = false,
 ): List<Config> {
-  var maxTokensConfig: Config =
-    LabelConfig(key = ConfigKeys.MAX_TOKENS, defaultValue = "$defaultMaxToken")
-  if (defaultMaxContextLength != null) {
-    maxTokensConfig =
-      NumberSliderConfig(
-        key = ConfigKeys.MAX_TOKENS,
-        sliderMin = 2000f,
-        sliderMax = defaultMaxContextLength.toFloat(),
-        defaultValue = defaultMaxToken.toFloat(),
-        valueType = ValueType.INT,
-      )
-  }
+  val safeContextDefault = 4096.coerceAtMost(defaultMaxContextLength ?: 32768).coerceAtLeast(2048)
   val configs =
     listOf(
-        maxTokensConfig,
+        NumberSliderConfig(
+          key = ConfigKeys.CONTEXT_LENGTH,
+          sliderMin = 2048f,
+          sliderMax = (defaultMaxContextLength ?: 32768).coerceAtMost(32768).toFloat(),
+          defaultValue = safeContextDefault.toFloat(),
+          valueType = ValueType.INT,
+        ),
+        NumberSliderConfig(
+          key = ConfigKeys.MAX_OUTPUT_TOKENS,
+          sliderMin = 512f,
+          sliderMax = 4096f,
+          defaultValue = 2048f,
+          valueType = ValueType.INT,
+          needReinitialization = false,
+        ),
+        BooleanSwitchConfig(
+          key = ConfigKeys.AUTO_SUMMARIZE,
+          defaultValue = true,
+          needReinitialization = false,
+        ),
+        NumberSliderConfig(
+          key = ConfigKeys.SUMMARIZATION_THRESHOLD,
+          sliderMin = 65f,
+          sliderMax = 85f,
+          defaultValue = 75f,
+          valueType = ValueType.INT,
+          needReinitialization = false,
+        ),
+        NumberSliderConfig(
+          key = ConfigKeys.RECENT_MESSAGES_TO_PRESERVE,
+          sliderMin = 4f,
+          sliderMax = 12f,
+          defaultValue = 8f,
+          valueType = ValueType.INT,
+          needReinitialization = false,
+        ),
         NumberSliderConfig(
           key = ConfigKeys.TOPK,
           sliderMin = 1f,

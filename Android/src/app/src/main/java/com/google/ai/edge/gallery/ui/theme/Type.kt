@@ -39,21 +39,21 @@ val baseline = Typography()
 
 val AppTypography =
   Typography(
-    displayLarge = baseline.displayLarge.copy(fontFamily = appFontFamily),
-    displayMedium = baseline.displayMedium.copy(fontFamily = appFontFamily),
-    displaySmall = baseline.displaySmall.copy(fontFamily = appFontFamily),
-    headlineLarge = baseline.headlineLarge.copy(fontFamily = appFontFamily),
-    headlineMedium = baseline.headlineMedium.copy(fontFamily = appFontFamily),
-    headlineSmall = baseline.headlineSmall.copy(fontFamily = appFontFamily),
-    titleLarge = baseline.titleLarge.copy(fontFamily = appFontFamily),
-    titleMedium = baseline.titleMedium.copy(fontFamily = appFontFamily),
-    titleSmall = baseline.titleSmall.copy(fontFamily = appFontFamily),
-    bodyLarge = baseline.bodyLarge.copy(fontFamily = appFontFamily),
-    bodyMedium = baseline.bodyMedium.copy(fontFamily = appFontFamily),
-    bodySmall = baseline.bodySmall.copy(fontFamily = appFontFamily),
-    labelLarge = baseline.labelLarge.copy(fontFamily = appFontFamily),
-    labelMedium = baseline.labelMedium.copy(fontFamily = appFontFamily),
-    labelSmall = baseline.labelSmall.copy(fontFamily = appFontFamily),
+    displayLarge = baseline.displayLarge.copy(fontFamily = appFontFamily, fontSize = 64.sp, lineHeight = 72.sp),
+    displayMedium = baseline.displayMedium.copy(fontFamily = appFontFamily, fontSize = 51.sp, lineHeight = 59.sp),
+    displaySmall = baseline.displaySmall.copy(fontFamily = appFontFamily, fontSize = 41.sp, lineHeight = 49.sp),
+    headlineLarge = baseline.headlineLarge.copy(fontFamily = appFontFamily, fontSize = 36.sp, lineHeight = 44.sp),
+    headlineMedium = baseline.headlineMedium.copy(fontFamily = appFontFamily, fontSize = 32.sp, lineHeight = 40.sp),
+    headlineSmall = baseline.headlineSmall.copy(fontFamily = appFontFamily, fontSize = 27.sp, lineHeight = 35.sp),
+    titleLarge = baseline.titleLarge.copy(fontFamily = appFontFamily, fontSize = 25.sp, lineHeight = 32.sp),
+    titleMedium = baseline.titleMedium.copy(fontFamily = appFontFamily, fontSize = 19.sp, lineHeight = 27.sp),
+    titleSmall = baseline.titleSmall.copy(fontFamily = appFontFamily, fontSize = 16.sp, lineHeight = 22.sp),
+    bodyLarge = baseline.bodyLarge.copy(fontFamily = appFontFamily, fontSize = 18.sp, lineHeight = 26.sp),
+    bodyMedium = baseline.bodyMedium.copy(fontFamily = appFontFamily, fontSize = 16.sp, lineHeight = 23.sp),
+    bodySmall = baseline.bodySmall.copy(fontFamily = appFontFamily, fontSize = 14.sp, lineHeight = 20.sp),
+    labelLarge = baseline.labelLarge.copy(fontFamily = appFontFamily, fontSize = 16.sp, lineHeight = 22.sp),
+    labelMedium = baseline.labelMedium.copy(fontFamily = appFontFamily, fontSize = 14.sp, lineHeight = 20.sp),
+    labelSmall = baseline.labelSmall.copy(fontFamily = appFontFamily, fontSize = 13.sp, lineHeight = 18.sp),
   )
 
 val titleMediumNarrow =

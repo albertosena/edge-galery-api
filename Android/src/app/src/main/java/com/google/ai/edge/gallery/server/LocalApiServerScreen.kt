@@ -15,21 +15,26 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +44,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -50,17 +56,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.google.ai.edge.gallery.data.Accelerator
 import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
+import com.google.ai.edge.gallery.data.requiresNpuBackend
+import com.google.ai.edge.gallery.context.ModelGenerationSettingsStore
 import com.google.ai.edge.gallery.ui.modelmanager.ModelManagerViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LocalApiServerScreen(
   modelManagerViewModel: ModelManagerViewModel,
@@ -72,13 +82,16 @@ fun LocalApiServerScreen(
   val modelState by modelManagerViewModel.uiState.collectAsState()
   val logEntries by controller.logs.entries.collectAsState()
   val inferenceMetrics by controller.logs.metrics.collectAsState()
-  var allowLan by remember { mutableStateOf(state.host == "0.0.0.0") }
   var portText by remember { mutableStateOf(state.port.toString()) }
   var starting by remember { mutableStateOf(false) }
+  var backendError by remember { mutableStateOf<String?>(null) }
   val context = LocalContext.current
   val model = modelState.selectedModel.takeUnless { it.name == "empty" }
-  var memorySaver by remember(model?.name) {
-    mutableStateOf(model?.name?.contains("E4B", ignoreCase = true) == true)
+  var contextLengthText by remember(model?.name) {
+    mutableStateOf(model?.getIntConfigValue(ConfigKeys.CONTEXT_LENGTH, 4096)?.toString() ?: "4096")
+  }
+  var maximumResponseTokensText by remember(model?.name) {
+    mutableStateOf(model?.getIntConfigValue(ConfigKeys.MAX_OUTPUT_TOKENS, 2048)?.toString() ?: "2048")
   }
   var performance by remember { mutableStateOf(readDevicePerformance(context)) }
   LaunchedEffect(Unit) {
@@ -152,8 +165,23 @@ fun LocalApiServerScreen(
             onClick = {
               if (downloaded) {
                 val select = {
+                  candidate.configValues = candidate.configValues.toMutableMap().apply {
+                    put(ConfigKeys.CONTEXT_LENGTH.label, 4096)
+                    put(
+                      ConfigKeys.ACCELERATOR.label,
+                      if (candidate.requiresNpuBackend) Accelerator.NPU.label
+                      else if (candidate.accelerators.contains(Accelerator.GPU)) Accelerator.GPU.label
+                      else Accelerator.CPU.label,
+                    )
+                  }
+                  contextLengthText = "4096"
+                  ModelGenerationSettingsStore.save(context, candidate)
                   modelManagerViewModel.selectModel(candidate)
-                  controller.log("Selected model: ${candidate.name}")
+                  modelManagerViewModel.updateConfigValuesUpdateTrigger()
+                  controller.log(
+                    "Selected model: ${candidate.name} • 4K context" +
+                      if (candidate.requiresNpuBackend) " • NPU required" else ""
+                  )
                 }
                 val task = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
                 val loadedModels =
@@ -196,72 +224,161 @@ fun LocalApiServerScreen(
 
       if (model != null && model.accelerators.isNotEmpty()) {
         Text("Runtime", style = MaterialTheme.typography.titleMedium)
-        Text("Accelerator", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          model.accelerators.forEach { accelerator ->
-            OutlinedButton(
-              enabled = !state.running,
-              onClick = {
-                model.configValues =
-                  model.configValues.toMutableMap().apply {
-                    put(ConfigKeys.ACCELERATOR.label, accelerator.label)
-                  }
-                modelManagerViewModel.updateConfigValuesUpdateTrigger()
-                controller.log(
-                  "Backend selected: ${accelerator.label.uppercase()}" +
-                    if (accelerator == Accelerator.NPU) " (NPU requested)" else ""
-                )
-                modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)?.let { task ->
-                  modelManagerViewModel.cleanupModel(context = context, task = task, model = model)
-                }
-              },
-            ) {
-              Text(accelerator.label.uppercase())
-            }
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text("Use NPU acceleration", style = MaterialTheme.typography.titleMedium)
+            Text(
+              if (model.requiresNpuBackend) "Required by this Qualcomm-compiled model"
+              else if (backend == Accelerator.NPU.label) "Enabled • experimental"
+              else "Disabled • using ${backend.uppercase()}",
+              style = MaterialTheme.typography.bodyLarge,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           }
+          Switch(
+            checked = backend == Accelerator.NPU.label,
+            enabled = !model.requiresNpuBackend && !state.running && !starting,
+            onCheckedChange = { enabled ->
+              backendError = null
+              val selected =
+                if (enabled) Accelerator.NPU
+                else if (model.accelerators.contains(Accelerator.GPU)) Accelerator.GPU
+                else Accelerator.CPU
+              model.configValues = model.configValues.toMutableMap().apply {
+                put(ConfigKeys.ACCELERATOR.label, selected.label)
+              }
+              modelManagerViewModel.updateConfigValuesUpdateTrigger()
+              controller.log("${selected.label.uppercase()} backend selected")
+              modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)?.let { task ->
+                modelManagerViewModel.cleanupModel(context = context, task = task, model = model)
+              }
+            },
+          )
         }
         if (model.llmSupportImage) {
           Text("Vision input supported • ${model.visionAccelerator.label.uppercase()} encoder")
         }
       }
 
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Column(modifier = Modifier.weight(1f)) {
-          Text("Memory saver")
-          Text("1024 output tokens; image/audio encoders off. Recommended for E4B.", style = MaterialTheme.typography.bodySmall)
-        }
-        Switch(
-          checked = memorySaver,
-          enabled = !state.running && !starting,
-          onCheckedChange = {
-            memorySaver = it
-            controller.log("Memory saver ${if (it) "enabled" else "disabled"}")
-          },
-        )
-      }
+      if (model != null) {
+        ElevatedCard(
+          modifier = Modifier.fillMaxWidth(),
+          colors =
+            CardDefaults.elevatedCardColors(
+              containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+            ),
+        ) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+          ) {
+            Text(
+              "Generation settings",
+              style = MaterialTheme.typography.titleLarge,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+              "Balance conversation memory, answer length and device performance.",
+              style = MaterialTheme.typography.bodyLarge,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
-      Text("Network", style = MaterialTheme.typography.titleMedium)
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Column(modifier = Modifier.weight(1f)) {
-          Text("Allow LAN access")
-          Text(
-            if (allowLan) "Listen on all network interfaces" else "Only this Android device",
-            style = MaterialTheme.typography.bodySmall,
-          )
+            val contextValue = contextLengthText.toIntOrNull() ?: 0
+            OutlinedTextField(
+              value = contextLengthText,
+              onValueChange = { contextLengthText = it.filter(Char::isDigit).take(5) },
+              enabled = !state.running && !starting,
+              label = { Text("Context length", style = MaterialTheme.typography.bodyLarge) },
+              textStyle = MaterialTheme.typography.titleMedium,
+              supportingText = {
+                Text(
+                  when {
+                    contextValue > 32768 -> "Maximum supported setting is 32,768 tokens."
+                    contextValue > 24576 -> "High memory use: 32K can be slower or fail to load."
+                    contextValue > 16384 -> "Higher memory use and longer prompt processing."
+                    else -> "Conversation capacity. Changing it reloads the model."
+                  },
+                  style = MaterialTheme.typography.bodyMedium,
+                  color =
+                    if (contextValue > 24576) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              },
+              isError = contextValue !in 2048..32768,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              modifier = Modifier.fillMaxWidth(),
+            )
+            Text("Quick presets", style = MaterialTheme.typography.titleSmall)
+            FlowRow(
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+              maxItemsInEachRow = 3,
+            ) {
+              listOf(4096, 8192, 16384, 24576, 32768).forEach { preset ->
+                val selected = contextValue == preset
+                if (selected) {
+                  FilledTonalButton(
+                    enabled = !state.running && !starting,
+                    onClick = { contextLengthText = preset.toString() },
+                    modifier = Modifier.widthIn(min = 88.dp),
+                  ) { Text("${preset / 1024}K", style = MaterialTheme.typography.labelLarge) }
+                } else {
+                  OutlinedButton(
+                    enabled = !state.running && !starting,
+                    onClick = { contextLengthText = preset.toString() },
+                    modifier = Modifier.widthIn(min = 88.dp),
+                  ) { Text("${preset / 1024}K", style = MaterialTheme.typography.labelLarge) }
+                }
+              }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            val outputValue = maximumResponseTokensText.toIntOrNull() ?: 0
+            OutlinedTextField(
+              value = maximumResponseTokensText,
+              onValueChange = { maximumResponseTokensText = it.filter(Char::isDigit).take(4) },
+              enabled = !state.running && !starting,
+              label = { Text("Maximum response tokens", style = MaterialTheme.typography.bodyLarge) },
+              textStyle = MaterialTheme.typography.titleMedium,
+              supportingText = {
+                Text(
+                  "Tokens reserved for each answer. Recommended: 2,048.",
+                  style = MaterialTheme.typography.bodyMedium,
+                )
+              },
+              isError = outputValue !in 1..4096,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              modifier = Modifier.fillMaxWidth(),
+            )
+            FlowRow(
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+              maxItemsInEachRow = 3,
+            ) {
+              listOf(512, 1024, 2048, 4096).forEach { preset ->
+                val selected = outputValue == preset
+                if (selected) {
+                  FilledTonalButton(
+                    enabled = !state.running && !starting,
+                    onClick = { maximumResponseTokensText = preset.toString() },
+                    modifier = Modifier.widthIn(min = 88.dp),
+                  ) { Text(preset.toString(), style = MaterialTheme.typography.labelLarge) }
+                } else {
+                  OutlinedButton(
+                    enabled = !state.running && !starting,
+                    onClick = { maximumResponseTokensText = preset.toString() },
+                    modifier = Modifier.widthIn(min = 88.dp),
+                  ) { Text(preset.toString(), style = MaterialTheme.typography.labelLarge) }
+                }
+              }
+            }
+          }
         }
-        Switch(
-          checked = allowLan,
-          enabled = !state.running,
-          onCheckedChange = { allowLan = it },
-        )
       }
 
       OutlinedTextField(
@@ -296,36 +413,55 @@ fun LocalApiServerScreen(
           if (state.running) {
             controller.stop()
           } else if (model?.instance != null) {
-            controller.start(portText.toIntOrNull() ?: 8080, allowLan)
+            // The model may have been initialized from another screen. Re-register it immediately
+            // before starting the foreground service so API requests see the existing instance.
+            modelManagerViewModel.selectModel(model)
+            controller.start(portText.toIntOrNull() ?: 8080, true)
           } else if (model != null) {
             val task = modelManagerViewModel.getTaskById(BuiltInTaskId.LLM_CHAT)
-            if (task != null) {
+            val requestedContext = contextLengthText.toIntOrNull()
+            val requestedOutput = maximumResponseTokensText.toIntOrNull()
+            if (task != null && requestedContext in 2048..32768 && requestedOutput in 1..4096) {
               starting = true
-              if (memorySaver) {
-                model.configValues = model.configValues.toMutableMap().apply {
-                  put(ConfigKeys.MAX_TOKENS.label, 1024)
-                }
-                controller.log("Memory saver applied: 1024 tokens, multimodal off")
+              backendError = null
+              model.configValues = model.configValues.toMutableMap().apply {
+                put(ConfigKeys.CONTEXT_LENGTH.label, requestedContext!!)
+                put(ConfigKeys.MAX_OUTPUT_TOKENS.label, requestedOutput!!)
               }
+              controller.log(
+                "${model.getStringConfigValue(ConfigKeys.ACCELERATOR, Accelerator.NPU.label).uppercase()} backend requested for ${model.name}"
+              )
+              ModelGenerationSettingsStore.save(context, model)
               modelManagerViewModel.initializeModel(
                 context = context,
                 task = task,
                 model = model,
                 localApiMode = true,
-                enableMultimodal = !memorySaver,
+                enableMultimodal = true,
                 onDone = {
                   starting = false
+                  // Keep registry publication and server startup ordered. The foreground service
+                  // reads this singleton as soon as its start intent is delivered.
+                  modelManagerViewModel.selectModel(model)
                   val loadedBackend =
                     model.getStringConfigValue(ConfigKeys.ACCELERATOR, Accelerator.CPU.label)
                   controller.log(
                     "Model loaded • backend ${loadedBackend.uppercase()} • " +
                       (if (loadedBackend == Accelerator.NPU.label) "NPU active" else "NPU not active") +
-                      if (model.llmSupportImage && !memorySaver) " • multimodal enabled" else " • multimodal off"
+                      if (model.llmSupportImage) " • multimodal enabled" else " • text only"
                   )
-                  controller.start(portText.toIntOrNull() ?: 8080, allowLan)
+                  controller.start(portText.toIntOrNull() ?: 8080, true)
                 },
                 onError = {
                   starting = false
+                  backendError =
+                    if (it.contains("TF_LITE_AUX", ignoreCase = true)) {
+                      "NPU is not available for this model file. It was not compiled with the TF_LITE_AUX metadata required by LiteRT-LM. Choose GPU/CPU or install an NPU-compiled model."
+                    } else if (it.contains("Input tensor not found", ignoreCase = true)) {
+                      "This Qualcomm-compiled model requires NPU execution. The app selected NPU automatically; reselect the model and try again."
+                    } else {
+                      "Model load failed: $it"
+                    }
                   controller.log("Model load failed: $it")
                 },
               )
@@ -345,12 +481,58 @@ fun LocalApiServerScreen(
         )
       }
 
+      backendError?.let { message ->
+        ElevatedCard(
+          modifier = Modifier.fillMaxWidth(),
+          colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        ) {
+          Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+              "NPU could not be activated",
+              style = MaterialTheme.typography.titleLarge,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Text(
+              message,
+              style = MaterialTheme.typography.bodyLarge,
+              color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+          }
+        }
+      }
+
       ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
           modifier = Modifier.fillMaxWidth().padding(16.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           Text("Device performance", style = MaterialTheme.typography.titleMedium)
+          val configuredContext =
+            inferenceMetrics.contextLength.takeIf { it > 0 }
+              ?: contextLengthText.toIntOrNull().orZero(4096)
+          val usedTokens = inferenceMetrics.promptTokens
+          val reservedTokens =
+            inferenceMetrics.reservedOutputTokens.takeIf { it > 0 }
+              ?: maximumResponseTokensText.toIntOrNull().orZero(2048)
+          val remainingTokens =
+            if (inferenceMetrics.contextLength > 0) inferenceMetrics.remainingTokens
+            else (configuredContext - usedTokens - reservedTokens).coerceAtLeast(0)
+          Text("Context usage", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+          Text(
+            "${formatTokenCount(usedTokens)} used  •  ${formatTokenCount(remainingTokens)} remaining",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          LinearProgressIndicator(
+            progress = { ((usedTokens + reservedTokens).toFloat() / configuredContext.coerceAtLeast(1)).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth().height(10.dp),
+          )
+          Text(
+            "${formatTokenCount(configuredContext)} total • ${formatTokenCount(reservedTokens)} reserved for response • estimated",
+            style = MaterialTheme.typography.bodyMedium,
+          )
+          HorizontalDivider()
           Text(
             if (inferenceMetrics.generatedTokens > 0)
               "%.1f tokens/s | First token: %d ms".format(
@@ -398,16 +580,30 @@ fun LocalApiServerScreen(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Text("Server logs", style = MaterialTheme.typography.titleMedium)
-        OutlinedButton(onClick = { controller.logs.clear() }) { Text("Clear") }
+        Text("Server logs", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        OutlinedButton(onClick = { controller.logs.clear() }) {
+          Text("Clear", style = MaterialTheme.typography.labelLarge)
+        }
       }
       if (logEntries.isEmpty()) {
-        Text("No server activity yet.", style = MaterialTheme.typography.bodySmall)
+        Text("No server activity yet.", style = MaterialTheme.typography.bodyLarge)
       } else {
         logEntries.takeLast(30).forEach {
-          Text(it, style = MaterialTheme.typography.bodySmall)
+          Text(
+            it,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(vertical = 4.dp),
+          )
         }
       }
     }
   }
 }
+
+private fun Int?.orZero(defaultValue: Int): Int = this?.takeIf { it > 0 } ?: defaultValue
+
+private fun formatTokenCount(value: Int): String =
+  when {
+    value >= 1024 -> String.format(Locale.US, "%.1fK", value / 1024.0)
+    else -> value.toString()
+  }

@@ -368,14 +368,17 @@ fun NumberSliderRow(config: NumberSliderConfig, values: SnapshotStateMap<String,
       // value or out of the slider range, temporary while user is still editing the text.
       var textFieldDisplayValue by remember {
         mutableStateOf(
-          getTextFieldDisplayValue(config.valueType, values[config.key.label] as Float)
+          getTextFieldDisplayValue(
+            config.valueType,
+            (values[config.key.label] as? Number)?.toFloat() ?: config.defaultValue,
+          )
         )
       }
 
       // Number slider.
       val sliderValue =
         try {
-          values[config.key.label] as Float
+          (values[config.key.label] as? Number)?.toFloat() ?: config.defaultValue
         } catch (e: Exception) {
           0f
         }
@@ -402,13 +405,19 @@ fun NumberSliderRow(config: NumberSliderConfig, values: SnapshotStateMap<String,
             // When leaving focus, display the internal value so that any invalid value is cleared.
             if (!isFocused) {
               textFieldDisplayValue =
-                getTextFieldDisplayValue(config.valueType, values[config.key.label] as Float)
+                getTextFieldDisplayValue(
+                  config.valueType,
+                  (values[config.key.label] as? Number)?.toFloat() ?: config.defaultValue,
+                )
             }
           },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         singleLine = true,
         onValueChange = {
+          if (config.valueType == ValueType.INT && it.any { char -> !char.isDigit() }) {
+            return@BasicTextField
+          }
           // Always update the display value to reflect the update on the UI.
           textFieldDisplayValue = it
 
@@ -436,18 +445,27 @@ fun NumberSliderRow(config: NumberSliderConfig, values: SnapshotStateMap<String,
       }
     }
 
-    if (config.key == ConfigKeys.MAX_TOKENS) {
+    if (config.key == ConfigKeys.MAX_TOKENS || config.key == ConfigKeys.CONTEXT_LENGTH) {
       val sliderValue =
         try {
           values[config.key.label] as Float
         } catch (e: Exception) {
           0f
         }
-      if (sliderValue >= 10000f) {
+      if (config.key == ConfigKeys.CONTEXT_LENGTH && sliderValue > 16384f) {
         Text(
-          text = stringResource(R.string.max_tokens_warning_message),
+          text =
+            if (sliderValue > 24576f) stringResource(R.string.context_very_high_warning)
+            else stringResource(R.string.context_high_warning),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.error,
+          modifier = Modifier.padding(top = 8.dp),
+        )
+      }
+      if (config.key == ConfigKeys.CONTEXT_LENGTH) {
+        Text(
+          text = stringResource(R.string.context_reload_message),
+          style = MaterialTheme.typography.bodySmall,
           modifier = Modifier.padding(top = 8.dp),
         )
       }

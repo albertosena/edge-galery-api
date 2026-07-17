@@ -578,7 +578,14 @@
   <!-- Label for the 'Max tokens' option in the model configuration dialog. [CHAR_LIMIT=NONE] -->
   <string name="config_label_max_tokens" translatable="true">Max tokens</string>
   <!-- Label for the 'Max output tokens' option in the model configuration dialog. [CHAR_LIMIT=NONE] -->
-  <string name="config_label_max_output_tokens" translatable="true">Max output tokens</string>
+  <string name="config_label_max_output_tokens" translatable="true">Maximum response tokens</string>
+  <string name="config_label_context_length" translatable="true">Context length</string>
+  <string name="config_label_auto_summarize" translatable="true">Automatically summarize long conversations</string>
+  <string name="config_label_summarization_threshold" translatable="true">Summarization threshold (%)</string>
+  <string name="config_label_recent_messages" translatable="true">Recent messages to preserve</string>
+  <string name="context_reload_message" translatable="true">Changing the context length requires reloading the model.</string>
+  <string name="context_high_warning" translatable="true">Large contexts use more memory and increase prompt processing time.</string>
+  <string name="context_very_high_warning" translatable="true">32K context may use significantly more memory and increase prompt processing time. If loading fails, try 24K or 16K.</string>
   <!-- Label for the 'TopK' option in the model configuration dialog. [CHAR_LIMIT=NONE] -->
   <string name="config_label_topk" translatable="true">TopK</string>
   <!-- Label for the 'TopP' option in the model configuration dialog. [CHAR_LIMIT=NONE] -->

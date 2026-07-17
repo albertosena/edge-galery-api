@@ -18,6 +18,11 @@ data class InferenceMetrics(
   val tokensPerSecond: Double = 0.0,
   val timeToFirstTokenMs: Long = 0,
   val generatedTokens: Int = 0,
+  val promptTokens: Int = 0,
+  val reservedOutputTokens: Int = 0,
+  val contextLength: Int = 0,
+  val remainingTokens: Int = 0,
+  val tokenCountEstimated: Boolean = true,
 )
 
 @Singleton
@@ -39,10 +44,21 @@ class LocalApiLogStore @Inject constructor() {
   fun recordInference(startedAtMs: Long, firstTokenAtMs: Long, generatedTokens: Int) {
     val elapsedSeconds = ((System.currentTimeMillis() - startedAtMs).coerceAtLeast(1)) / 1000.0
     _metrics.value =
-      InferenceMetrics(
+      _metrics.value.copy(
         tokensPerSecond = generatedTokens / elapsedSeconds,
         timeToFirstTokenMs = (firstTokenAtMs - startedAtMs).coerceAtLeast(0),
         generatedTokens = generatedTokens,
+      )
+  }
+
+  fun recordContextUsage(promptTokens: Int, reservedOutputTokens: Int, contextLength: Int) {
+    _metrics.value =
+      _metrics.value.copy(
+        promptTokens = promptTokens,
+        reservedOutputTokens = reservedOutputTokens,
+        contextLength = contextLength,
+        remainingTokens = (contextLength - promptTokens - reservedOutputTokens).coerceAtLeast(0),
+        tokenCountEstimated = true,
       )
   }
 }
