@@ -12,6 +12,8 @@ import android.util.Base64
 import com.google.ai.edge.gallery.runtime.SingleConversationCoordinator
 import com.google.ai.edge.gallery.runtime.runtimeHelper
 import com.google.ai.edge.gallery.data.THOUGHT_CHANNEL
+import com.google.ai.edge.gallery.data.ConfigKeys
+import com.google.ai.edge.gallery.context.ConservativeTokenCounter
 import com.google.ai.edge.gallery.ui.llmchat.LlmModelInstance
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Content
@@ -70,7 +72,10 @@ data class OpenAiChatResponse(
 @Serializable data class OpenAiError(val message: String, val type: String = "invalid_request_error", val param: String? = null, val code: String? = null)
 
 @Singleton
-class OpenAiInferenceGateway @Inject constructor(private val registry: ActiveModelRegistry) {
+class OpenAiInferenceGateway @Inject constructor(
+  private val registry: ActiveModelRegistry,
+  private val logs: LocalApiLogStore,
+) {
   suspend fun complete(
     request: OpenAiChatRequest,
     onDelta: ((InferenceDelta) -> Unit)? = null,
@@ -81,6 +86,18 @@ class OpenAiInferenceGateway @Inject constructor(private val registry: ActiveMod
       request.messages.filter { it.role == "system" }.joinToString("\n") { it.textContent() }
         .takeIf(String::isNotBlank)
     val conversational = request.messages.filter { it.role != "system" }
+    val promptTokens = ConservativeTokenCounter().count(request.messages.joinToString("\n") { "${it.role}: ${it.textContent()}" }).tokens
+    val contextLength = model.getIntConfigValue(ConfigKeys.CONTEXT_LENGTH, 16384)
+    val reservedOutput =
+      (request.maxTokens ?: model.getIntConfigValue(ConfigKeys.MAX_OUTPUT_TOKENS, 2048))
+        .coerceIn(1, 4096)
+    logs.recordContextUsage(promptTokens, reservedOutput, contextLength)
+    if (promptTokens + reservedOutput > contextLength) {
+      throw OpenAiRequestException(
+        "Prompt and reserved response exceed the configured context length.",
+        "context_length_exceeded",
+      )
+    }
     val last = conversational.lastOrNull()
     if (last == null || last.role != "user") throw OpenAiRequestException("The final message must have role 'user'.", "invalid_messages")
     val history = conversational.dropLast(1).map {
@@ -140,6 +157,11 @@ class OpenAiInferenceGateway @Inject constructor(private val registry: ActiveMod
       created = System.currentTimeMillis() / 1000,
       model = model.name,
       choices = listOf(OpenAiChoice(message = OpenAiAssistantMessage(content = output))),
+      usage = OpenAiUsage(
+        promptTokens = promptTokens,
+        completionTokens = ConservativeTokenCounter().count(output).tokens,
+        totalTokens = promptTokens + ConservativeTokenCounter().count(output).tokens,
+      ),
     )
   }
 }

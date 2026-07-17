@@ -12,7 +12,7 @@
 
 **Turn an Android phone into a local LLM and vision server for Open WebUI, scripts, agents, and any OpenAI-compatible client.**
 
-[Download APK](https://github.com/albertosena/edge-galery-api/releases/latest) · [Upstream project](https://github.com/google-ai-edge/gallery) · [API examples](#api-examples)
+[Download APK](https://github.com/albertosena/edge-galery-api/releases/latest) · [Upstream project](https://github.com/google-ai-edge/gallery) · [API examples](#openai-compatible-api)
 
 </div>
 
@@ -54,16 +54,19 @@ This paragraph is intentionally explicit so search engines, code assistants, RAG
 - Standard JSON completions and Server-Sent Events streaming with `[DONE]`.
 - Incremental token streaming, optional exposed thinking through `reasoning_content`, tokens/second, and time-to-first-token metrics.
 - OpenAI multimodal message arrays with Base64 `image_url` data URLs.
-- CPU and GPU selection; NPU is available only when supported by the model and device driver.
+- Optional NPU acceleration, with automatic NPU selection for Qualcomm SM8650-compiled models.
+- Bundled Qualcomm LiteRT dispatch and QAIRT 2.47 runtime libraries for arm64/Hexagon v75 devices.
+- Per-model generation settings with a safe 4K context default, 2,048 response-token default, and quick presets up to 32K/4,096.
+- Live estimated context budget showing tokens used, reserved for the response, and remaining.
 - Direct model selection and loading from the **Local API Server** screen.
 - Only downloaded models are shown in the server screen.
 - An always-visible **Browse all models** button links back to the complete model catalog.
-- LAN mode for clients on the same Wi-Fi network and loopback-only mode for local use.
+- LAN access is always enabled so trusted devices on the same Wi-Fi network can connect.
 - Serialized conversations to protect the single on-device inference runtime.
 - Activity logs for model loading, backend selection, new chats, multimodal requests, completion, and errors.
 - Live diagnostics for app/graphics memory, available RAM, battery temperature, thermal status, and low-memory pressure.
 - A shortcut to request unrestricted battery usage for long-running server sessions.
-- Memory Saver limits output to 1,024 tokens and disables image/audio encoders; it defaults on for E4B models.
+- Larger typography, clearer selected states, colored status cards, and more readable server logs.
 - A dedicated Local API home card and the **AI Edge Gallery API** app identity.
 - Offline fallback model catalog, avoiding first-launch failure when GitHub is unreachable.
 
@@ -105,14 +108,13 @@ adb install -r ai-edge-gallery-api-debug.apk
 1. Open **Models** and download or import a LiteRT-LM model.
 2. Open the navigation menu and choose **Local API**.
 3. Select one of the downloaded models, or use **Browse all models** to open the complete catalog.
-4. Select CPU or GPU when the model supports both. NPU appears only for compatible model metadata.
-5. Enable **Allow LAN access** if Open WebUI runs on another device.
-6. Optionally enable **Memory saver** for large models or memory-constrained devices.
-7. Press **Start Server** and wait for the model to load.
-8. Optionally press **Allow unrestricted battery use** to reduce background interruption by Android.
-9. Copy the displayed OpenAI Base URL.
+4. Optionally enable **Use NPU acceleration**. Qualcomm SM8650-compiled models require NPU and select it automatically.
+5. Choose the context size and maximum response size. New selections start at **4K context** and **2,048 response tokens**.
+6. Press **Start Server** and wait for the model to load.
+7. Optionally press **Allow unrestricted battery use** to reduce background interruption by Android.
+8. Copy the displayed OpenAI Base URL. LAN access is always enabled.
 
-Device performance appears immediately above the log panel. It reports memory, graphics allocation, available RAM, temperature, thermal pressure, tokens per second, and time to first token. Logs report the requested backend and explicitly say whether NPU is active.
+Device performance appears immediately above the log panel. It reports estimated context use and remaining tokens, memory, graphics allocation, available RAM, temperature, thermal pressure, tokens per second, and time to first token. Logs report the requested backend and explicitly say whether NPU is active.
 
 ### Open WebUI
 
@@ -198,9 +200,11 @@ Remote image URLs are intentionally not downloaded. Send a data URL so image pro
 |---|---|---|
 | CPU | Supported | Most compatible; uses the model's CPU path and XNNPack where applicable. |
 | GPU | Supported | Uses the LiteRT GPU accelerator when declared by the model. |
-| NPU | Conditional | Requires compatible model metadata, LiteRT NPU libraries, and a device driver that successfully registers. |
+| NPU | Qualcomm SM8650 included | Bundles Qualcomm LiteRT dispatch plus QAIRT 2.47 arm64/Hexagon v75 libraries. The model must be NPU-compiled and the device/driver must be compatible. |
 
-Selecting NPU in source code does not guarantee NPU execution. The app exposes only declared accelerators and logs `NPU active` or `NPU not active`. On unsupported devices LiteRT may report `kLiteRtStatusErrorInvalidArgument`; the app must not claim NPU acceleration in that case.
+NPU remains optional for ordinary models. Qualcomm artifacts whose names contain `.qualcomm.sm8650.` are detected and forced to the NPU backend because they do not contain CPU/GPU input tensors. The app verifies that the required native libraries were extracted before initialization and reports a readable error instead of attempting an unsafe load. Server logs show `NPU active` or `NPU not active`.
+
+The bundled runtime files and notices are documented in `Android/src/app/src/main/assets/third_party/qairt/README.txt`. They currently target `arm64-v8a`; other SoCs still use the CPU/GPU paths unless a compatible NPU runtime is supplied.
 
 ## Build from source
 
@@ -273,7 +277,7 @@ Model binaries (`.litertlm`, `.task`) are large and are not part of this reposit
 
 - The API currently has no authentication or TLS. Prefer loopback or a trusted private LAN.
 - One conversation is processed at a time.
-- Performance token counts are approximate generated callback fragments; JSON usage fields currently remain zero.
+- Context and API usage token counts are conservative estimates because the runtime does not expose its tokenizer through this integration.
 - Only the active model is returned by `/v1/models`.
 - Multimodal support depends on the selected model.
 - Thinking output depends on the selected model and runtime exposing a thought channel.

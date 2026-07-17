@@ -56,6 +56,7 @@ import com.google.ai.edge.gallery.data.BuiltInTaskId
 import com.google.ai.edge.gallery.data.ConfigKeys
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelCapability
+import com.google.ai.edge.gallery.context.ModelGenerationSettingsStore
 import com.google.ai.edge.gallery.data.ModelDownloadStatusType
 import com.google.ai.edge.gallery.data.RuntimeType
 import com.google.ai.edge.gallery.data.Task
@@ -274,6 +275,7 @@ fun ModelPageAppBar(
         val oldConfigValues = model.configValues
         model.prevConfigValues = oldConfigValues
         model.configValues = curConfigValues
+        ModelGenerationSettingsStore.save(context, model)
         if (task.id == BuiltInTaskId.LLM_AGENT_CHAT) {
           model.agentSkillTopKAdjusted = true
           model.agentSkillTopK = curConfigValues[ConfigKeys.TOPK.label]

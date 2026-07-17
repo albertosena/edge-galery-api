@@ -29,6 +29,8 @@ import com.google.ai.edge.gallery.data.DEFAULT_TOPP
 import com.google.ai.edge.gallery.data.DEFAULT_VISION_ACCELERATOR
 import com.google.ai.edge.gallery.data.Model
 import com.google.ai.edge.gallery.data.ModelCapability
+import com.google.ai.edge.gallery.data.requiresNpuBackend
+import com.google.ai.edge.gallery.context.ModelGenerationSettingsStore
 import com.google.ai.edge.gallery.data.THOUGHT_CHANNEL
 import com.google.ai.edge.gallery.runtime.CleanUpListener
 import com.google.ai.edge.gallery.runtime.LlmModelHelper
@@ -48,6 +50,7 @@ import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ToolProvider
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -76,15 +79,40 @@ object LlmChatModelHelper : LlmModelHelper {
     enableConversationConstrainedDecoding: Boolean,
     coroutineScope: CoroutineScope?,
   ) {
+    ModelGenerationSettingsStore.load(context, model)
+    if (model.requiresNpuBackend && !hasQualcommNpuRuntime(context)) {
+      onDone(
+        "This Qualcomm SM8650 NPU model needs the QAIRT/QNN and Qualcomm LiteRT " +
+          "dispatch libraries, but they are not included in this app. To run now, import " +
+          "gemma3-270m-it-q8.litertlm (without '.qualcomm.sm8650') and use CPU or GPU. " +
+          "The unsafe NPU initialization was blocked to prevent the app from closing."
+      )
+      return
+    }
     // Prepare options.
     val maxTokens =
-      model.getIntConfigValue(key = ConfigKeys.MAX_TOKENS, defaultValue = DEFAULT_MAX_TOKEN)
+      model.getIntConfigValue(
+        key = ConfigKeys.CONTEXT_LENGTH,
+        defaultValue = model.getIntConfigValue(ConfigKeys.MAX_TOKENS, 4096),
+      ).coerceIn(2048, 32768)
     val topK = model.getIntConfigValue(key = ConfigKeys.TOPK, defaultValue = DEFAULT_TOPK)
     val topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP)
     val temperature =
       model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE)
-    val accelerator =
+    val configuredAccelerator =
       model.getStringConfigValue(key = ConfigKeys.ACCELERATOR, defaultValue = Accelerator.GPU.label)
+    val accelerator =
+      if (model.requiresNpuBackend) {
+        Log.i(TAG, "Qualcomm-compiled model detected; forcing NPU backend")
+        if (configuredAccelerator != Accelerator.NPU.label) {
+          model.configValues = model.configValues.toMutableMap().apply {
+            put(ConfigKeys.ACCELERATOR.label, Accelerator.NPU.label)
+          }
+        }
+        Accelerator.NPU.label
+      } else {
+        configuredAccelerator
+      }
     val visionAccelerator =
       model.getStringConfigValue(
         key = ConfigKeys.VISION_ACCELERATOR,
@@ -186,6 +214,26 @@ object LlmChatModelHelper : LlmModelHelper {
       return
     }
     onDone("")
+  }
+
+  private fun hasQualcommNpuRuntime(context: Context): Boolean {
+    val nativeLibraries =
+      File(context.applicationInfo.nativeLibraryDir)
+        .listFiles()
+        ?.map { it.name.lowercase() }
+        .orEmpty()
+    val hasQnnHtp = nativeLibraries.any { it.startsWith("libqnnhtp") }
+    val hasQnnSystem = nativeLibraries.any { it == "libqnnsystem.so" }
+    val hasQualcommDispatch =
+      nativeLibraries.any { it.contains("dispatch") && it.contains("qualcomm") }
+    if (!hasQnnHtp || !hasQnnSystem || !hasQualcommDispatch) {
+      Log.e(
+        TAG,
+        "Qualcomm NPU runtime unavailable: QNN HTP=$hasQnnHtp, " +
+          "QNN System=$hasQnnSystem, dispatch=$hasQualcommDispatch",
+      )
+    }
+    return hasQnnHtp && hasQnnSystem && hasQualcommDispatch
   }
 
   @OptIn(ExperimentalApi::class) // opt-in experimental flags
